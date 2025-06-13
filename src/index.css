@@ -95,6 +95,47 @@ html {
       gap: 0.5rem;
       column-count: 2;
     }
+    
+    /* Nouveau système grid pour les médias */
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.5rem;
+    }
+  }
+  
+  /* Styles pour les conteneurs de médias avec bouton X */
+  .media-item-container {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.375rem;
+  }
+  
+  .media-remove-button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    cursor: pointer;
+    color: white;
+    border: none;
+    z-index: 10;
+  }
+  
+  .media-remove-button:hover {
+    background: rgba(220, 53, 69, 0.8);
+  }
+  
+  .media-item-container:hover .media-remove-button {
+    opacity: 1;
   }
 }
 
@@ -229,4 +270,229 @@ input[type="number"]::-webkit-outer-spin-button {
   height: 100%;
   min-width: 44px;
   min-height: 44px;
+}
+
+/* CROP STYLES */
+
+.crop {
+  position: relative;
+  font-size: 0;
+}
+
+.options {
+  margin-bottom: 0.25rem;
+}
+
+.videoPreview {
+  /* box-shadow: 0 0 20px 5px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  width: 100%; */
+}
+
+.box {
+  border: 1px solid white;
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.box svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: move;
+  touch-action: manipulation;
+}
+
+.box svg line {
+  stroke: white;
+  stroke-width: 1px;
+}
+
+.dimensions {
+  position: absolute;
+  top: -2rem;
+  right: 0;
+  z-index: 9999;
+  color: white;
+  font-size: 0.9rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem;
+}
+
+.handles > div {
+  position: absolute;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-color: white;
+  touch-action: manipulation;
+  border-radius: 3px;
+}
+
+/* nw n ne */
+.handle-nw,
+.handle-n,
+.handle-ne {
+  top: -3px;
+  border-top-style: solid;
+}
+
+.handle-n {
+  border-top: 3px solid;
+}
+/* nw w sw */
+.handle-nw,
+.handle-w,
+.handle-sw {
+  left: -3px;
+  border-left: 3px solid;
+}
+.handle-nw {
+  border-top: 3px solid;
+}
+
+/* ne e se */
+.handle-ne,
+.handle-e,
+.handle-se {
+  right: -3px;
+  border-right: 3px solid;
+}
+
+.handle-ne {
+  border-top: 3px solid;
+}
+.handle-se {
+  border-bottom: 3px solid;
+}
+
+.handle-e {
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+}
+
+/* sw s se */
+.handle-sw,
+.handle-s,
+.handle-se {
+  bottom: -3px;
+  border-bottom: 3px solid;
+}
+.handle-sw {
+  border-left: 3px solid;
+}
+
+.handle-n,
+.handle-s {
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+
+.handle-e,
+.handle-w {
+  top: 50%;
+  transform: translate(0, -50%);
+}
+
+/* Styles pour les guidelines de snapping - COULEURS BLEUES ORIGINALES RESTAURÉES */
+.designcombo-scene-moveable .moveable-snapline {
+  background: rgba(0, 162, 255, 0.8) !important;
+  border: 1px dashed rgba(0, 162, 255, 0.9) !important;
+  box-shadow: 0 0 2px rgba(0, 162, 255, 0.3) !important;
+  z-index: 999999 !important;
+  pointer-events: none !important;
+}
+
+/* Guidelines verticales - CORRECTION POUR VISIBILITÉ */
+.designcombo-scene-moveable .moveable-snapline.moveable-snapline-vertical {
+  width: 1px !important;
+  border-left: 1px dashed rgba(0, 162, 255, 0.9) !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  background: rgba(0, 162, 255, 0.8) !important;
+  box-shadow: 0 0 2px rgba(0, 162, 255, 0.3) !important;
+}
+
+/* Guidelines horizontales - RESTAURÉES COMME AVANT */
+.designcombo-scene-moveable .moveable-snapline.moveable-snapline-horizontal {
+  height: 1px !important;
+  border-top: 1px dashed rgba(0, 162, 255, 0.9) !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  background: rgba(0, 162, 255, 0.8) !important;
+  box-shadow: 0 0 2px rgba(0, 162, 255, 0.3) !important;
+}
+
+/* Guidelines de centre - COULEURS BLEUES ORIGINALES */
+.designcombo-scene-moveable .moveable-snapline[data-guideline="center"] {
+  background: rgba(255, 165, 0, 0.8) !important;
+  border: 1px dashed rgba(255, 165, 0, 0.9) !important;
+  box-shadow: 0 0 4px rgba(255, 165, 0, 0.4) !important;
+}
+
+.designcombo-scene-moveable .moveable-snapline[data-guideline="center"].moveable-snapline-vertical {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 165, 0, 0.9) 3px,
+    rgba(255, 165, 0, 0.9) 6px
+  ) !important;
+}
+
+.designcombo-scene-moveable .moveable-snapline[data-guideline="center"].moveable-snapline-horizontal {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 165, 0, 0.9) 3px,
+    rgba(255, 165, 0, 0.9) 6px
+  ) !important;
+}
+
+/* Animation pour l'apparition des guidelines - ORIGINALE RESTAURÉE */
+.designcombo-scene-moveable .moveable-snapline {
+  animation: snaplineAppear 0.15s ease-out !important;
+  opacity: 0.9 !important;
+}
+
+@keyframes snaplineAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+/* Lignes de guideline personnalisées - COULEURS BLEUES RESTAURÉES */
+.designcombo-scene-moveable .moveable-guideline {
+  background: rgba(0, 162, 255, 0.6) !important;
+  border: 1px dashed rgba(0, 162, 255, 0.8) !important;
+  z-index: 9999 !important;
+  pointer-events: none !important;
+}
+
+.designcombo-scene-moveable .moveable-guideline.moveable-guideline-horizontal {
+  height: 1px !important;
+  border-top: 1px dashed rgba(0, 162, 255, 0.8) !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  background: rgba(0, 162, 255, 0.6) !important;
+}
+
+.designcombo-scene-moveable .moveable-guideline.moveable-guideline-vertical {
+  width: 1px !important;
+  border-left: 1px dashed rgba(0, 162, 255, 0.8) !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  background: rgba(0, 162, 255, 0.6) !important;
 }

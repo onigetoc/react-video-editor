@@ -1,28 +1,32 @@
-import React, { useState, cloneElement, ReactElement, useRef } from "react";
-import { createPortal } from "react-dom";
+import React, { useState, cloneElement, type ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 
 interface DraggableProps {
   children: ReactElement;
   shouldDisplayPreview?: boolean;
   renderCustomPreview?: ReactElement;
-  data?: Record<string, any>;
+  data?: Record<string, any> | (() => Record<string, any>);
 }
 
 const Draggable: React.FC<DraggableProps> = ({
   children,
   renderCustomPreview,
-  data = {},
+  data,
   shouldDisplayPreview = true,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const previewRef = useRef<HTMLDivElement>(null);
 
   const handleDragStart = (e: React.DragEvent<HTMLElement>) => {
+    if (!data) {
+      return;
+    }
+    const dataObj = typeof data === 'function' ? data() : data;
     setIsDragging(true);
     e.dataTransfer.setDragImage(new Image(), 0, 0); // Hides default preview
-    // set drag data
-    e.dataTransfer.setData(JSON.stringify(data), JSON.stringify(data));
+    e.dataTransfer.setData(JSON.stringify(dataObj), JSON.stringify(dataObj));
+    e.dataTransfer.effectAllowed = 'move';
+
     setPosition({
       x: e.clientX,
       y: e.clientY,
@@ -33,7 +37,8 @@ const Draggable: React.FC<DraggableProps> = ({
     setIsDragging(false);
   };
 
-  const handleDrag = (e: React.DragEvent<HTMLElement>) => {
+  const handleDragOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault(); // Important: allows drop
     if (isDragging) {
       setPosition({
         x: e.clientX,
@@ -42,13 +47,35 @@ const Draggable: React.FC<DraggableProps> = ({
     }
   };
 
+  // Add dragover event listener to document
+  React.useEffect(() => {
+    const handleDocumentDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (isDragging) {
+        setPosition({
+          x: e.clientX,
+          y: e.clientY,
+        });
+      }
+    };
+
+    if (isDragging) {
+      document.addEventListener('dragover', handleDocumentDragOver);
+    }
+
+    return () => {
+      document.removeEventListener('dragover', handleDocumentDragOver);
+    };
+  }, [isDragging]);
+
   const childWithProps = cloneElement(children, {
     draggable: true,
     onDragStart: handleDragStart,
     onDragEnd: handleDragEnd,
-    onDrag: handleDrag,
+    onDragOver: handleDragOver,
     style: {
       ...children.props.style,
+      cursor: 'grab',
     },
   });
 
@@ -58,19 +85,18 @@ const Draggable: React.FC<DraggableProps> = ({
       {isDragging && shouldDisplayPreview && renderCustomPreview
         ? createPortal(
             <div
-              ref={previewRef}
               style={{
-                position: "fixed",
+                position: 'fixed',
                 left: position.x,
                 top: position.y,
-                pointerEvents: "none",
+                pointerEvents: 'none',
                 zIndex: 9999,
-                transform: "translate(-50%, -50%)", // Center the preview
+                transform: 'translate(-50%, -50%)', // Center the preview
               }}
             >
               {renderCustomPreview}
             </div>,
-            document.body,
+            document.body
           )
         : null}
     </>

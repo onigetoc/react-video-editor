@@ -13,6 +13,7 @@ interface DroppableProps extends React.HTMLAttributes<HTMLDivElement> {
   maxFileCount?: DropzoneProps["maxFiles"];
   multiple?: boolean;
   disabled?: boolean;
+  noClick?: boolean;
   children?: React.ReactNode;
 }
 
@@ -26,13 +27,15 @@ export function Droppable(props: DroppableProps) {
     maxFileCount = 1,
     multiple = false,
     disabled = false,
+    noClick = true,
     className,
     children,
     ...dropzoneProps
   } = props;
 
   const onDrop = React.useCallback(
-    (acceptedFiles: File[], _: FileRejection[]) => {
+    (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
+      console.warn(rejectedFiles);
       if (!multiple && maxFileCount === 1 && acceptedFiles.length > 1) {
         // toast.error("Cannot upload more than 1 file at a time");
         return;
@@ -51,7 +54,7 @@ export function Droppable(props: DroppableProps) {
       maxFiles={maxFileCount}
       multiple={maxFileCount > 1 || multiple}
       disabled={disabled}
-      noClick
+      noClick={noClick}
     >
       {({ getRootProps, getInputProps, isDragActive }) => (
         <div
