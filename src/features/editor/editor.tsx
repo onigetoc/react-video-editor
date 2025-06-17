@@ -1,4 +1,5 @@
 "use client";
+import React, { useEffect, useRef, useState } from "react";
 import Timeline from "./timeline";
 import useStore from "./store/use-store";
 import Navbar from "./navbar";
@@ -6,7 +7,6 @@ import useTimelineEvents from "./hooks/use-timeline-events";
 import Scene from "./scene";
 import StateManager, { LAYER_DELETE, HISTORY_UNDO, HISTORY_REDO } from "@designcombo/state";
 import { PLAYER_PAUSE, PLAYER_PLAY } from "./constants/events";
-import { useEffect, useRef, useState } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -32,10 +32,10 @@ const stateManager = new StateManager({
   },
 });
 
-const Editor = () => {
+const Editor: React.FC = () => {
   const [projectName, setProjectName] = useState<string>("Untitled video");
   const timelinePanelRef = useRef<ImperativePanelHandle>(null);
-  const { timeline, playerRef, activeIds, size, setState } = useStore();
+  const { timeline, playerRef, activeIds, setState } = useStore();
   const [isPlaying, setIsPlaying] = useState(false);
 
   useTimelineEvents();
@@ -53,12 +53,11 @@ const Editor = () => {
     
     // Mettre à jour le store Zustand pour déclencher le centrage
     setState({ size: currentSize });
-  }, []); // Exécuter une seule fois au démarrage
-
+  }, [setState]); // Ajouter setState comme dépendance
   useEffect(() => {
     setCompactFonts(getCompactFontData(FONTS));
     setFonts(FONTS);
-  }, []);
+  }, [setCompactFonts, setFonts]);
 
   // Initialiser le store des médias importés au démarrage de l'éditeur
   useEffect(() => {
@@ -95,12 +94,11 @@ const Editor = () => {
       },
     );
   };
-
   useEffect(() => {
     const onResize = () => handleTimelineResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [timeline]);
+  }, [timeline, handleTimelineResize]);
 
   // Suivi de l'état de lecture du player
   useEffect(() => {

@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useMemo } from "react";
 import Draggable from "@/components/shared/draggable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Droppable } from "@/components/ui/droppable";
@@ -6,24 +7,30 @@ import { dispatch } from "@designcombo/events";
 import { ADD_VIDEO, ADD_AUDIO, ADD_IMAGE } from "@designcombo/state";
 import { generateId } from "@designcombo/timeline";
 import { IVideo } from "@designcombo/types";
-import React, { useState, useEffect } from "react";
 import { useIsDraggingOverTimeline } from "../hooks/is-dragging-over-timeline";
-import { PlusIcon, Cross2Icon } from "@radix-ui/react-icons";
+import { PlusIcon } from "@radix-ui/react-icons";
 import { Music, Image, Video, AudioLines } from "lucide-react";
 import useImportedMediaStore from "../store/use-imported-media-store";
 import { MediaType, ImportedMedia } from "../interfaces/editor";
+import { Masonry } from "masonic";
 
 type TabType = 'import' | 'video' | 'pexels';
 
+interface MasonryMediaData extends ImportedMedia {
+  _key: string;
+}
+
+interface MasonryVideoData extends Partial<IVideo> {
+  _key: string;
+}
+
 export const Videos = () => {
   const [activeTab, setActiveTab] = useState<TabType>('import');
-  const isDraggingOverTimeline = useIsDraggingOverTimeline();
   
   // Utiliser le store global pour les médias importés
   const {
     importedMedia,
     addImportedMedia,
-    removeImportedMedia,
     isMediaAlreadyImported,
     clearAllData
   } = useImportedMediaStore();
@@ -46,43 +53,6 @@ export const Videos = () => {
     }
   }, [clearAllData, importedMedia]);
 
-  const handleAddMedia = (payload: ImportedMedia) => {
-    switch (payload.type) {
-      case 'video':
-        dispatch(ADD_VIDEO, {
-          payload,
-          options: {
-            resourceId: "main",
-            scaleMode: "fit",
-          },
-        });
-        break;
-      case 'audio':
-        dispatch(ADD_AUDIO, {
-          payload,
-          options: {},
-        });
-        break;
-      case 'image':
-        dispatch(ADD_IMAGE, {
-          payload,
-          options: {
-            scaleMode: "fit",
-          },
-        });
-        break;
-    }
-  };
-
-  const handleAddVideo = (payload: Partial<IVideo>) => {
-    dispatch(ADD_VIDEO, {
-      payload,
-      options: {
-        resourceId: "main",
-        scaleMode: "fit",
-      },
-    });
-  };
 
   const getFileType = (file: File): MediaType | null => {
     if (file.type.startsWith('video/')) return 'video';
@@ -138,7 +108,7 @@ export const Videos = () => {
 
   const handleFileUpload = async (files: File[]) => {
     const newMediaItems: ImportedMedia[] = [];
-    const duplicateFiles: string[] = [];
+    let duplicateCount = 0;
     
     for (const file of files) {
       const fileType = getFileType(file);
@@ -146,7 +116,7 @@ export const Videos = () => {
 
       // Vérifier les doublons avant de traiter le fichier
       if (isMediaAlreadyImported(file)) {
-        duplicateFiles.push(file.name);
+        duplicateCount++;
         continue;
       }
 
@@ -204,8 +174,8 @@ export const Videos = () => {
     const addedMedia = addImportedMedia(newMediaItems);
     
     // Afficher un message si des doublons ont été détectés
-    if (duplicateFiles.length > 0) {
-      console.info(`Médias déjà importés (ignorés): ${duplicateFiles.join(', ')}`);
+    if (duplicateCount > 0) {
+      console.info(`${duplicateCount} média(s) déjà importé(s) (ignoré(s))`);
       // Vous pouvez ajouter ici une notification toast si disponible
     }
     
@@ -214,9 +184,6 @@ export const Videos = () => {
     }
   };
 
-  const handleRemoveImportedMedia = (mediaId: string) => {
-    removeImportedMedia(mediaId);
-  };
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -252,17 +219,20 @@ export const Videos = () => {
             </div>
             
             {importedMedia.length > 0 && (
-              <div className="media-grid px-4 pb-4 mt-4">
-                {importedMedia.map((media, index) => (
-                  <MediaItem
-                    key={index}
-                    media={media}
-                    shouldDisplayPreview={!isDraggingOverTimeline}
-                    handleAddMedia={handleAddMedia}
-                    onRemove={handleRemoveImportedMedia}
-                    isImported={true}
-                  />
-                ))}
+              <div className="px-4 pb-4 mt-4">
+                <Masonry
+                  items={importedMedia.map((media, index) => ({
+                    ...media,
+                    id: media.id || `media-${index}`,
+                    _key: `media-${index}-${media.id || index}`
+                  }))}
+                  columnWidth={120}
+                  columnGutter={8}
+                  rowGutter={8}
+                  render={MasonryMediaItem}
+                  overscanBy={2}
+                  itemKey={(data: MasonryMediaData) => data._key}
+                />
               </div>
             )}
           </div>
@@ -270,15 +240,20 @@ export const Videos = () => {
       
       case 'video':
         return (
-          <div className="media-grid px-4 pb-4">
-            {VIDEOS.map((video, index) => (
-              <VideoItemDefault
-                key={index}
-                video={video}
-                shouldDisplayPreview={!isDraggingOverTimeline}
-                handleAddImage={handleAddVideo}
-              />
-            ))}
+          <div className="px-4 pb-4">
+            <Masonry
+              items={VIDEOS.map((video, index) => ({
+                ...video,
+                id: video.id || `video-${index}`,
+                _key: `video-${index}-${video.id || index}`
+              }))}
+              columnWidth={120}
+              columnGutter={8}
+              rowGutter={8}
+              render={MasonryVideoItem}
+              overscanBy={2}
+              itemKey={(data: MasonryVideoData) => data._key}
+            />
           </div>
         );
       
@@ -335,46 +310,62 @@ export const Videos = () => {
   );
 };
 
-// Composant pour les médias importés (avec bouton X)
-const MediaItem = ({
-  handleAddMedia,
-  media,
-  shouldDisplayPreview,
-  onRemove,
-  isImported,
-}: {
-  handleAddMedia: (payload: ImportedMedia) => void;
-  media: ImportedMedia;
-  shouldDisplayPreview: boolean;
-  onRemove: (mediaId: string) => void;
-  isImported: boolean;
-}) => {
-  const [isHovered, setIsHovered] = React.useState(false);
 
-  const style = React.useMemo(
+// Composant pour Masonic - avec nom de fichier affiché
+const MasonryMediaItem = ({ data, width }: { data: ImportedMedia; width: number }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const isDraggingOverTimeline = useIsDraggingOverTimeline();
+
+  const style = useMemo(
     () => ({
-      backgroundImage: media.type !== 'audio' ? `url(${media.preview})` : undefined,
-      backgroundColor: media.type === 'audio' ? '#27272a' : undefined,
+      backgroundImage: data.type !== 'audio' ? `url(${data.preview})` : undefined,
+      backgroundColor: data.type === 'audio' ? '#27272a' : undefined,
       backgroundSize: "cover",
       width: "80px",
       height: "80px",
     }),
-    [media.preview, media.type],
+    [data.preview, data.type],
   );
 
   const handleDoubleClick = () => {
-    handleAddMedia(media);
+    switch (data.type) {
+      case 'video':
+        dispatch(ADD_VIDEO, {
+          payload: data,
+          options: {
+            resourceId: "main",
+            scaleMode: "fit",
+          },
+        });
+        break;
+      case 'audio':
+        dispatch(ADD_AUDIO, {
+          payload: data,
+          options: {},
+        });
+        break;
+      case 'image':
+        dispatch(ADD_IMAGE, {
+          payload: data,
+          options: {
+            scaleMode: "fit",
+          },
+        });
+        break;
+    }
   };
 
   const handleRemoveClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isImported && media.id) {
-      onRemove(media.id);
+    // Utiliser le store global directement
+    const { removeImportedMedia } = useImportedMediaStore.getState();
+    if (data.id) {
+      removeImportedMedia(data.id);
     }
   };
 
   const renderThumbnail = () => {
-    if (media.type === 'audio') {
+    if (data.type === 'audio') {
       return (
         <div className="flex h-full w-full items-center justify-center rounded-md bg-zinc-800 aspect-square">
           <Music size={24} className="text-white" />
@@ -385,15 +376,15 @@ const MediaItem = ({
     return (
       <img
         draggable={false}
-        src={media.preview}
+        src={data.preview}
         className="h-full w-full rounded-md object-cover cursor-pointer"
-        alt={`${media.type} thumbnail`}
+        alt={`${data.type} thumbnail`}
       />
     );
   };
 
   const getMediaIcon = () => {
-    switch (media.type) {
+    switch (data.type) {
       case 'video':
         return <Video size={16} className="text-white" />;
       case 'audio':
@@ -406,97 +397,117 @@ const MediaItem = ({
   };
 
   return (
-    <Draggable
-      data={{
-        ...media,
-        metadata: {
-          previewUrl: media.preview,
-          ...media.metadata,
-        },
-      }}
-      renderCustomPreview={<div style={style} className="draggable" />}
-      shouldDisplayPreview={shouldDisplayPreview}
-    >
-      <div
-        className="media-item-container"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onDoubleClick={handleDoubleClick}
+    <div style={{ width }} className="masonic-media-item">
+      <Draggable
+        data={{
+          ...data,
+          metadata: {
+            previewUrl: data.preview,
+            ...data.metadata,
+          },
+        }}
+        renderCustomPreview={<div style={style} className="draggable" />}
+        shouldDisplayPreview={!isDraggingOverTimeline}
       >
-        <div className="flex w-full items-center justify-center overflow-hidden bg-background pb-2 relative">
-          {renderThumbnail()}
-          
-          {/* Icône de type de média */}
-          <div className="absolute bottom-1 right-0 mr-1.5 mb-2.5 bg-blue-600/70 rounded p-1 flex items-center justify-center">
-            {getMediaIcon()}
-          </div>
-        </div>
-        
-        {/* Bouton X flottant - seulement pour les médias importés */}
-        <button
-          className="media-remove-button"
-          onClick={handleRemoveClick}
-          style={{ opacity: isHovered ? 1 : 0 }}
+        <div
+          className="media-item-container"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onDoubleClick={handleDoubleClick}
         >
-          <Cross2Icon width={12} height={12} />
-        </button>
+          <div className="flex w-full items-center justify-center overflow-hidden bg-background relative">
+            {renderThumbnail()}
+            
+            {/* Icône de type de média */}
+            <div className="absolute bottom-1 right-0 mr-1.5 mb-2.5 bg-blue-600/70 rounded p-1 flex items-center justify-center">
+              {getMediaIcon()}
+            </div>
+          </div>
+          
+          {/* Bouton X flottant */}
+          <button
+            className="media-remove-button"
+            onClick={handleRemoveClick}
+            style={{ opacity: isHovered ? 1 : 0 }}
+          >
+            ✕
+          </button>
+        </div>
+      </Draggable>
+      
+      {/* Nom du fichier avec ellipsis */}
+      <div className="masonic-media-name" title={data.name}>
+        {data.name}
       </div>
-    </Draggable>
+    </div>
   );
 };
 
-// Composant pour les vidéos par défaut (sans bouton X)
-const VideoItemDefault = ({
-  handleAddImage,
-  video,
-  shouldDisplayPreview,
-}: {
-  handleAddImage: (payload: Partial<IVideo>) => void;
-  video: Partial<IVideo>;
-  shouldDisplayPreview: boolean;
-}) => {
+// Composant pour Masonic - Vidéos par défaut avec nom de fichier affiché
+const MasonryVideoItem = ({ data, width }: { data: Partial<IVideo>; width: number }) => {
+  const isDraggingOverTimeline = useIsDraggingOverTimeline();
+
   const style = React.useMemo(
     () => ({
-      backgroundImage: `url(${video.preview})`,
+      backgroundImage: `url(${data.preview})`,
       backgroundSize: "cover",
       width: "80px",
       height: "80px",
     }),
-    [video.preview],
+    [data.preview],
   );
 
+  const handleDoubleClick = () => {
+    dispatch(ADD_VIDEO, {
+      payload: data,
+      options: {
+        resourceId: "main",
+        scaleMode: "fit",
+      },
+    });
+  };
+
+  // Extraire le nom du fichier depuis l'URL ou utiliser un nom par défaut
+  const getVideoName = () => {
+    if (data.preview) {
+      const urlParts = data.preview.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      // Supprimer l'extension et nettoyer le nom
+      return filename.split('.')[0].replace(/[-_]/g, ' ') || 'Video';
+    }
+    return 'Video';
+  };
+
   return (
-    <Draggable
-      data={{
-        ...video,
-        metadata: {
-          previewUrl: video.preview,
-        },
-      }}
-      renderCustomPreview={<div style={style} className="draggable" />}
-      shouldDisplayPreview={shouldDisplayPreview}
-    >
-      <div
-        onDoubleClick={() =>
-          handleAddImage({
-            id: generateId(),
-            details: {
-              src: video.details!.src,
-            },
-            metadata: {
-              previewUrl: video.preview,
-            },
-          } as Partial<IVideo>)
-        }
-        className="flex w-full items-center justify-center overflow-hidden bg-background pb-2"
+    <div style={{ width }} className="masonic-media-item">
+      <Draggable
+        data={{
+          ...data,
+          metadata: {
+            previewUrl: data.preview,
+          },
+        }}
+        renderCustomPreview={<div style={style} className="draggable" />}
+        shouldDisplayPreview={!isDraggingOverTimeline}
       >
-        <img
-          draggable={false}
-          src={video.preview}
-          className="h-full w-full rounded-md object-cover cursor-pointer"
-          alt="video"
-        />
+        <div
+          onDoubleClick={handleDoubleClick}
+          className="flex w-full items-center justify-center overflow-hidden bg-background relative"
+        >
+          <img
+            draggable={false}
+            src={data.preview}
+            className="h-full w-full rounded-md object-cover cursor-pointer"
+            alt="video"
+          />
+        </div>
+      </Draggable>
+      
+      {/* Nom de la vidéo avec ellipsis */}
+      <div className="masonic-media-name" title={getVideoName()}>
+        {getVideoName()}
       </div>
-    </Draggable>
+    </div>
   );
 };
+

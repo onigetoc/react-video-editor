@@ -5,11 +5,12 @@ import {
   LAYER_CLONE,
   LAYER_DELETE,
   TIMELINE_SCALE_CHANGED,
+  EDIT_OBJECT,
 } from "@designcombo/state";
 import { PLAYER_PAUSE, PLAYER_PLAY } from "../constants/events";
 import { frameToTimeString, getCurrentTime, timeToString } from "../utils/time";
 import useStore from "../store/use-store";
-import { SquareSplitHorizontal, Trash, ZoomIn, ZoomOut } from "lucide-react";
+import { SquareSplitHorizontal, Trash, ZoomIn, ZoomOut, CopyPlus, ImageUp } from "lucide-react";
 import {
   getFitZoomLevel,
   getNextZoomLevel,
@@ -81,7 +82,7 @@ const IconPlayerSkipForward = ({ size }: { size: number }) => (
 );
 const Header = () => {
   const [playing, setPlaying] = useState(false);
-  const { duration, fps, scale, playerRef, activeIds } = useStore();
+  const { duration, fps, scale, playerRef, activeIds, trackItemDetailsMap, size } = useStore();
 
   useUpdateAnsestors({ playing, playerRef });
 
@@ -98,6 +99,71 @@ const Header = () => {
         time: getCurrentTime(),
       },
     });
+  };
+
+  const doFitSelected = () => {
+    if (!activeIds.length) return;
+
+    const fitPayload: Record<string, { details: { left: number; top: number; transform: string; width?: number; height?: number } }> = {};
+
+    activeIds.forEach((id) => {
+      const item = trackItemDetailsMap[id];
+      if (!item) return;
+
+      // Ignorer complètement l'audio pour éviter de casser la timeline
+      if (item.type === 'audio') return;
+
+      const elementWidth = item.details.width || 0;
+      const elementHeight = item.details.height || 0;
+
+      if (item.type === 'text') {
+        // Pour le texte: comportement actuel (centrage simple) - à préserver
+        const centeredLeft = (size.width - elementWidth) / 2;
+        const centeredTop = (size.height - elementHeight) / 2;
+        
+        fitPayload[id] = {
+          details: {
+            left: centeredLeft,
+            top: centeredTop,
+            transform: "scale(1) rotate(0deg)"
+          },
+        };
+      } else if (item.type === 'image' || item.type === 'video') {
+        // Pour images/vidéos: appliquer l'algorithme "fit" comme à l'ajout initial
+        // Inspiré de use-crop-store.ts lignes 71-75 et 107-111
+        
+        // Calculer le scale factor "fit"
+        const widthScale = size.width / elementWidth;
+        const heightScale = size.height / elementHeight;
+        const scaleFactor = Math.min(widthScale, heightScale);
+        
+        // Calculer les nouvelles dimensions après scaling
+        const scaledWidth = elementWidth * scaleFactor;
+        const scaledHeight = elementHeight * scaleFactor;
+        
+        // Centrer avec les nouvelles dimensions
+        const centeredLeft = (size.width - scaledWidth) / 2;
+        const centeredTop = (size.height - scaledHeight) / 2;
+        
+        fitPayload[id] = {
+          details: {
+            left: centeredLeft,
+            top: centeredTop,
+            transform: `scale(${scaleFactor}) rotate(0deg)`,
+            // Mettre à jour les dimensions pour refléter le nouveau scale
+            width: scaledWidth,
+            height: scaledHeight
+          },
+        };
+      }
+    });
+
+    // Appliquer les modifications si des éléments ont été traités
+    if (Object.keys(fitPayload).length > 0) {
+      dispatch(EDIT_OBJECT, {
+        payload: fitPayload,
+      });
+    }
   };
 
   const changeScale = (scale: ITimelineScaleState) => {
@@ -188,7 +254,16 @@ const Header = () => {
               size={"sm"}
               className="flex items-center gap-1 px-2"
             >
-              <SquareSplitHorizontal size={15} /> Clone
+              <CopyPlus size={15} /> Clone
+            </Button>
+            <Button
+              disabled={!activeIds.length}
+              onClick={doFitSelected}
+              variant={"ghost"}
+              size={"sm"}
+              className="flex items-center gap-1 px-2"
+            >
+              <ImageUp size={15} /> Fit
             </Button>
           </div>
           <div className="flex items-center justify-center">

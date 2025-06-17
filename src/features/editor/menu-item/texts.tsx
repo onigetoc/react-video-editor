@@ -15,8 +15,8 @@ export const getAddTextPayload = () => ({
   },
   type: 'text',
   details: {
-    text: 'Heading and some body',
-    fontSize: 80,
+    text: 'Default Texte',
+    fontSize: 100,
     width: 800,
     fontUrl: DEFAULT_FONT.url,
     fontFamily: DEFAULT_FONT.postScriptName,

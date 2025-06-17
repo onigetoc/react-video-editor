@@ -137,6 +137,24 @@ html {
   .media-item-container:hover .media-remove-button {
     opacity: 1;
   }
+
+  /* Styles pour Masonic */
+  .masonic-media-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .masonic-media-name {
+    font-size: 15px;
+    color: rgb(113 113 122); /* text-muted-foreground */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    padding: 0 2px;
+    line-height: 1.2;
+  }
 }
 
 .designcombo-scene-moveable .moveable-control {

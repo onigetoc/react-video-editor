@@ -7,28 +7,56 @@ import { IImage } from "@designcombo/types";
 import React from "react";
 import { useIsDraggingOverTimeline } from "../hooks/is-dragging-over-timeline";
 import { ADD_ITEMS } from "@designcombo/state";
+import { Masonry } from "masonic";
+
+interface MasonryImageData extends Partial<IImage> {
+  _key: string;
+}
 
 export const Images = () => {
+
+  return (
+    <div className="flex flex-1 flex-col h-full">
+      <div className="text-text-primary flex h-12 flex-none items-center px-4 text-sm font-medium">
+        Photos
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="px-4 pb-4">
+          <Masonry
+            items={IMAGES.map((image, index) => ({
+              ...image,
+              id: image.id || `image-${index}`,
+              _key: `image-${index}-${image.id || index}`
+            }))}
+            columnWidth={120}
+            columnGutter={8}
+            rowGutter={8}
+            render={MasonryImageItem}
+            overscanBy={2}
+            itemKey={(data: MasonryImageData) => data._key}
+          />
+        </div>
+      </ScrollArea>
+    </div>
+  );
+};
+
+// Composant pour Masonic - Images avec nom de fichier affiché
+const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: number }) => {
   const isDraggingOverTimeline = useIsDraggingOverTimeline();
 
-  const handleAddImage = (payload: Partial<IImage>) => {
+  const style = React.useMemo(
+    () => ({
+      backgroundImage: `url(${data.preview})`,
+      backgroundSize: "cover",
+      width: "80px",
+      height: "80px",
+    }),
+    [data.preview],
+  );
+
+  const handleDoubleClick = () => {
     const id = generateId();
-    // dispatch(ADD_IMAGE, {
-    //   payload: {
-    //     id,
-    //     type: "image",
-    //     display: {
-    //       from: 5000,
-    //       to: 10000,
-    //     },
-    //     details: {
-    //       src: payload.details?.src,
-    //     },
-    //   },
-    //   options: {
-    //     scaleMode: "fit",
-    //   },
-    // });
     dispatch(ADD_ITEMS, {
       payload: {
         trackItems: [
@@ -40,7 +68,7 @@ export const Images = () => {
               to: 5000,
             },
             details: {
-              src: payload.details?.src,
+              src: data.details?.src,
             },
             metadata: {},
           },
@@ -49,72 +77,41 @@ export const Images = () => {
     });
   };
 
-  return (
-    <div className="flex flex-1 flex-col h-full">
-      <div className="text-text-primary flex h-12 flex-none items-center px-4 text-sm font-medium">
-        Photos
-      </div>
-      <ScrollArea className="flex-1">
-        <div className="media-grid px-4 pb-4">
-          {IMAGES.map((image, index) => {
-            return (
-              <ImageItem
-                key={index}
-                image={image}
-                shouldDisplayPreview={!isDraggingOverTimeline}
-                handleAddImage={handleAddImage}
-              />
-            );
-          })}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-};
-
-const ImageItem = ({
-  handleAddImage,
-  image,
-  shouldDisplayPreview,
-}: {
-  handleAddImage: (payload: Partial<IImage>) => void;
-  image: Partial<IImage>;
-  shouldDisplayPreview: boolean;
-}) => {
-  const style = React.useMemo(
-    () => ({
-      backgroundImage: `url(${image.preview})`,
-      backgroundSize: "cover",
-      width: "80px",
-      height: "80px",
-    }),
-    [image.preview],
-  );
+  // Extraire le nom du fichier depuis l'URL ou utiliser un nom par défaut
+  const getImageName = () => {
+    if (data.preview) {
+      const urlParts = data.preview.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      // Supprimer l'extension et nettoyer le nom
+      return filename.split('.')[0].replace(/[-_]/g, ' ') || 'Image';
+    }
+    return 'Image';
+  };
 
   return (
-    <Draggable
-      data={image}
-      renderCustomPreview={<div style={style} />}
-      shouldDisplayPreview={shouldDisplayPreview}
-    >
-      <div
-        onDoubleClick={() =>
-          handleAddImage({
-            id: generateId(),
-            details: {
-              src: image.details!.src,
-            },
-          } as IImage)
-        }
-        className="flex w-full items-center justify-center overflow-hidden bg-background pb-2"
+    <div style={{ width }} className="masonic-media-item">
+      <Draggable
+        data={data}
+        renderCustomPreview={<div style={style} />}
+        shouldDisplayPreview={!isDraggingOverTimeline}
       >
-        <img
-          draggable={false}
-          src={image.preview}
-          className="h-full w-full rounded-md object-cover cursor-pointer"
-          alt="image"
-        />
+        <div
+          onDoubleClick={handleDoubleClick}
+          className="flex w-full items-center justify-center overflow-hidden bg-background relative"
+        >
+          <img
+            draggable={false}
+            src={data.preview}
+            className="h-full w-full rounded-md object-cover cursor-pointer"
+            alt="image"
+          />
+        </div>
+      </Draggable>
+      
+      {/* Nom de l'image avec ellipsis */}
+      <div className="masonic-media-name" title={getImageName()}>
+        {getImageName()}
       </div>
-    </Draggable>
+    </div>
   );
 };

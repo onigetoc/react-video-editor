@@ -24,6 +24,7 @@ class Audio extends AudioBase {
 
   public scrollLeft = 0;
   public display?: IDisplay;
+  declare trim: any;
   private isDirty: boolean = true;
   declare playbackRate: number;
   public bars: any[] = [];
@@ -36,6 +37,9 @@ class Audio extends AudioBase {
     super(props);
     this.fill = "#00586c";
     this.objectCaching = false;
+    this.display = props.display;
+    this.trim = props.trim;
+    this.duration = props.duration;
     this.initOffscreenCanvas();
     this.initialize();
   }
