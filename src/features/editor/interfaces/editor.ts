@@ -70,5 +70,6 @@ export interface ImportedMedia {
     previewUrl?: string;
     originalFile?: File;
     author?: string;
+    needsThumbnail?: boolean;
   };
 }

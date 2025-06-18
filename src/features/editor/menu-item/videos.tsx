@@ -44,12 +44,23 @@ export const Videos = () => {
       (window as Window & { debugImportedMedia?: object }).debugImportedMedia = {
         clearCache: clearAllData,
         getImportedMedia: () => importedMedia,
+        getStore: () => useImportedMediaStore.getState(),
         forceReload: () => {
           clearAllData();
           window.location.reload();
+        },
+        logStatus: () => {
+          console.log('📊 STATUS DEBUG:');
+          console.log('   - Médias dans le store:', importedMedia.length);
+          console.log('   - Détail:', importedMedia.map(m => ({ name: m.name, id: m.id, type: m.type })));
+          console.log('   - LocalStorage:', localStorage.getItem(useImportedMediaStore.getState().constructor.name || 'video-editor-imported-media'));
         }
       };
-      console.log('🔧 Debug: window.debugImportedMedia disponible pour le debug');
+      console.log('🔧 Debug: window.debugImportedMedia disponible');
+      console.log('   - clearCache() - Vider le cache');
+      console.log('   - getImportedMedia() - Voir les médias');
+      console.log('   - logStatus() - Voir le statut');
+      console.log('   - forceReload() - Vider et recharger');
     }
   }, [clearAllData, importedMedia]);
 
@@ -67,27 +78,54 @@ export const Videos = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
+      // Timeout de 10 secondes pour éviter les blocages
+      const timeout = setTimeout(() => {
+        console.warn(`⏱️ Timeout génération thumbnail pour ${file.name}`);
+        URL.revokeObjectURL(video.src);
+        resolve('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiByeD0iOCIgZmlsbD0iIzI3MjcyNyIvPgo8cGF0aCBkPSJNMzIgMjhMMzIgNTJMNTIgNDBMMzIgMjhaIiBmaWxsPSIjRkZGRkZGIi8+Cjwvc3ZnPgo=');
+      }, 10000);
+      
+      const cleanup = () => {
+        clearTimeout(timeout);
+        // Ne pas révoquer l'URL ici car elle peut être utilisée ailleurs
+      };
+      
       video.addEventListener('loadeddata', () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        video.currentTime = 1; // Seek to 1 second to get a good frame
+        console.log(`📹 Métadonnées vidéo chargées pour ${file.name}`);
+        canvas.width = video.videoWidth || 320;
+        canvas.height = video.videoHeight || 240;
+        video.currentTime = Math.min(1, video.duration * 0.1); // 10% de la durée ou 1 sec
       });
       
       video.addEventListener('seeked', () => {
+        console.log(`🎬 Seek terminé pour ${file.name}`);
         if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
-          resolve(thumbnail);
+          try {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
+            cleanup();
+            console.log(`✅ Thumbnail généré avec succès pour ${file.name}`);
+            resolve(thumbnail);
+          } catch (error) {
+            console.error(`❌ Erreur lors de la génération thumbnail pour ${file.name}:`, error);
+            cleanup();
+            resolve('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiByeD0iOCIgZmlsbD0iIzI3MjcyNyIvPgo8cGF0aCBkPSJNMzIgMjhMMzIgNTJMNTIgNDBMMzIgMjhaIiBmaWxsPSIjRkZGRkZGIi8+Cjwvc3ZnPgo=');
+          }
         }
       });
       
-      video.addEventListener('error', () => {
-        // Fallback to a default video icon or placeholder
+      video.addEventListener('error', (error) => {
+        console.error(`❌ Erreur vidéo pour ${file.name}:`, error);
+        cleanup();
         resolve('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiByeD0iOCIgZmlsbD0iIzI3MjcyNyIvPgo8cGF0aCBkPSJNMzIgMjhMMzIgNTJMNTIgNDBMMzIgMjhaIiBmaWxsPSIjRkZGRkZGIi8+Cjwvc3ZnPgo=');
       });
       
-      video.src = URL.createObjectURL(file);
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.muted = true; // Important pour éviter les problèmes autoplay
       video.load();
+      
+      console.log(`🎥 Début génération thumbnail pour ${file.name}`);
     });
   };
 
@@ -96,56 +134,63 @@ export const Videos = () => {
     return 'https://cdn.designcombo.dev/thumbnails/music-preview.png';
   };
 
-  // Fonction helper pour convertir un fichier en base64
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
-  };
 
   const handleFileUpload = async (files: File[]) => {
+    console.log(`🎬 DÉBUT UPLOAD: ${files.length} fichiers reçus`);
+    
     const newMediaItems: ImportedMedia[] = [];
     let duplicateCount = 0;
+    let processedCount = 0;
+    let errorCount = 0;
     
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      console.log(`📁 Traitement fichier [${i + 1}/${files.length}]: ${file.name} (${file.size} bytes)`);
+      
       const fileType = getFileType(file);
-      if (!fileType) continue;
+      if (!fileType) {
+        console.warn(`⚠️ Type de fichier non supporté: ${file.name}`);
+        continue;
+      }
+
+      console.log(`📋 Type détecté: ${fileType} pour ${file.name}`);
 
       // Vérifier les doublons avant de traiter le fichier
       if (isMediaAlreadyImported(file)) {
+        console.log(`🔄 Doublon ignoré: ${file.name}`);
         duplicateCount++;
         continue;
       }
 
       const url = URL.createObjectURL(file);
+      console.log(`🔗 URL blob créée: ${url.substring(0, 50)}... pour ${file.name}`);
+      
       let thumbnail: string;
-      let fileData: string;
-      let previewData: string;
 
       try {
-        // Convertir le fichier en base64 pour la persistance
-        fileData = await fileToBase64(file);
-
+        console.log(`🖼️ Génération thumbnail pour ${file.name}...`);
+        
         // Generate appropriate thumbnail based on file type
         switch (fileType) {
           case 'video':
-            thumbnail = await generateVideoThumbnail(file);
-            previewData = thumbnail; // Le thumbnail est déjà en base64
+            try {
+              thumbnail = await generateVideoThumbnail(file);
+              console.log(`✅ Thumbnail vidéo généré pour ${file.name}`);
+            } catch (error) {
+              console.warn(`⚠️ Erreur thumbnail vidéo pour ${file.name}:`, error);
+              thumbnail = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiByeD0iOCIgZmlsbD0iIzI3MjcyNyIvPgo8cGF0aCBkPSJNMzIgMjhMMzIgNTJMNTIgNDBMMzIgMjhaIiBmaWxsPSIjRkZGRkZGIi8+Cjwvc3ZnPgo=';
+            }
             break;
           case 'audio':
             thumbnail = generateAudioThumbnail();
-            previewData = thumbnail; // URL statique
+            console.log(`✅ Thumbnail audio généré pour ${file.name}`);
             break;
           case 'image':
-            thumbnail = url; // Pour l'affichage immédiat
-            previewData = fileData; // Utiliser les données du fichier pour la persistance
+            thumbnail = url; // Utiliser l'URL blob directement
+            console.log(`✅ Thumbnail image (URL blob) pour ${file.name}`);
             break;
           default:
             thumbnail = '';
-            previewData = '';
         }
         
         const newMedia: ImportedMedia = {
@@ -156,32 +201,45 @@ export const Videos = () => {
           name: file.name,
           size: file.size,
           lastModified: file.lastModified,
-          fileData, // Données base64 pour la persistance
-          previewData, // Thumbnail base64 pour la persistance
+          // Ne plus stocker fileData ni previewData - trop lourd pour la mémoire
           metadata: {
             previewUrl: thumbnail,
             originalFile: file,
           },
         };
         
+        console.log(`✅ Média créé avec ID: ${newMedia.id} pour ${file.name}`);
         newMediaItems.push(newMedia);
+        processedCount++;
+        
       } catch (error) {
-        console.error(`Erreur lors du traitement du fichier ${file.name}:`, error);
+        console.error(`❌ Erreur lors du traitement du fichier ${file.name}:`, error);
+        errorCount++;
       }
     }
     
+    console.log(`📊 RÉSUMÉ TRAITEMENT:`);
+    console.log(`   - Fichiers reçus: ${files.length}`);
+    console.log(`   - Traités avec succès: ${processedCount}`);
+    console.log(`   - Doublons ignorés: ${duplicateCount}`);
+    console.log(`   - Erreurs: ${errorCount}`);
+    console.log(`   - Médias prêts à ajouter: ${newMediaItems.length}`);
+    
     // Ajouter les médias uniques au store
+    console.log(`🏪 Envoi vers le store de ${newMediaItems.length} médias...`);
     const addedMedia = addImportedMedia(newMediaItems);
+    console.log(`📥 Store a confirmé l'ajout de ${addedMedia.length} médias`);
     
     // Afficher un message si des doublons ont été détectés
     if (duplicateCount > 0) {
       console.info(`${duplicateCount} média(s) déjà importé(s) (ignoré(s))`);
-      // Vous pouvez ajouter ici une notification toast si disponible
     }
     
     if (addedMedia.length > 0) {
       console.info(`${addedMedia.length} nouveau(x) média(s) importé(s)`);
     }
+    
+    console.log(`🎬 FIN UPLOAD`);
   };
 
 
@@ -199,7 +257,7 @@ export const Videos = () => {
                   "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]
                 }}
                 maxSize={1024 * 1024 * 500} // 500MB max for videos
-                maxFileCount={20}
+                maxFileCount={100} // Augmenté de 20 à 100 fichiers
                 multiple={true}
                 noClick={false}
                 className="border-2 border-dashed border-zinc-300 rounded-lg p-4 text-center hover:border-zinc-400 transition-colors cursor-pointer"
@@ -221,17 +279,18 @@ export const Videos = () => {
             {importedMedia.length > 0 && (
               <div className="px-4 pb-4 mt-4">
                 <Masonry
+                  key={`masonry-imported-${importedMedia.length}`}
                   items={importedMedia.map((media, index) => ({
                     ...media,
-                    id: media.id || `media-${index}`,
-                    _key: `media-${index}-${media.id || index}`
+                    id: media.id || `media-${index}-${Date.now()}`,
+                    _key: media.id || `media-${index}-${Date.now()}`
                   }))}
                   columnWidth={120}
                   columnGutter={8}
                   rowGutter={8}
                   render={MasonryMediaItem}
-                  overscanBy={2}
-                  itemKey={(data: MasonryMediaData) => data._key}
+                  overscanBy={20} // Augmenté pour afficher plus d'éléments hors écran
+                  itemKey={(data: MasonryMediaData) => data?._key || 'fallback-key'}
                 />
               </div>
             )}
@@ -242,17 +301,18 @@ export const Videos = () => {
         return (
           <div className="px-4 pb-4">
             <Masonry
+              key={`masonry-videos-${VIDEOS.length}`}
               items={VIDEOS.map((video, index) => ({
                 ...video,
-                id: video.id || `video-${index}`,
-                _key: `video-${index}-${video.id || index}`
+                id: video.id || `video-${index}-${Date.now()}`,
+                _key: video.id || `video-${index}-${Date.now()}`
               }))}
               columnWidth={120}
               columnGutter={8}
               rowGutter={8}
               render={MasonryVideoItem}
               overscanBy={2}
-              itemKey={(data: MasonryVideoData) => data._key}
+              itemKey={(data: MasonryVideoData) => data?._key || 'fallback-key'}
             />
           </div>
         );

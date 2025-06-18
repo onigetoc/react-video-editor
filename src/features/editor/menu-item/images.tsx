@@ -23,17 +23,18 @@ export const Images = () => {
       <ScrollArea className="flex-1">
         <div className="px-4 pb-4">
           <Masonry
+            key={`masonry-images-${IMAGES.length}`}
             items={IMAGES.map((image, index) => ({
               ...image,
-              id: image.id || `image-${index}`,
-              _key: `image-${index}-${image.id || index}`
+              id: image.id || `image-${index}-${Date.now()}`,
+              _key: image.id || `image-${index}-${Date.now()}`
             }))}
             columnWidth={120}
             columnGutter={8}
             rowGutter={8}
             render={MasonryImageItem}
             overscanBy={2}
-            itemKey={(data: MasonryImageData) => data._key}
+            itemKey={(data: MasonryImageData) => data?._key || 'fallback-key'}
           />
         </div>
       </ScrollArea>

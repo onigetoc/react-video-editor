@@ -24,7 +24,19 @@ const Draggable: React.FC<DraggableProps> = ({
     const dataObj = typeof data === 'function' ? data() : data;
     setIsDragging(true);
     e.dataTransfer.setDragImage(new Image(), 0, 0); // Hides default preview
-    e.dataTransfer.setData(JSON.stringify(dataObj), JSON.stringify(dataObj));
+    
+    // Créer une version sérialisable de l'objet (sans File ni fonctions)
+    const serializableData = {
+      ...dataObj,
+      metadata: dataObj.metadata ? {
+        ...dataObj.metadata,
+        // Exclure originalFile qui n'est pas sérialisable
+        originalFile: undefined,
+        previewUrl: dataObj.metadata.previewUrl
+      } : undefined
+    };
+    
+    e.dataTransfer.setData("application/json", JSON.stringify(serializableData));
     e.dataTransfer.effectAllowed = 'move';
 
     setPosition({

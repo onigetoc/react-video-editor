@@ -33,9 +33,10 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
     const { importedMedia, isMediaAlreadyImported, saveToStorage } = get();
     
     console.log(`🔄 Tentative d'ajout de ${newMedia.length} médias...`);
+    console.log(`📊 État actuel: ${importedMedia.length} médias dans le store`);
     
-    // Filtrer les doublons
-    const uniqueNewMedia = newMedia.filter(media => {
+    // Filtrer les doublons avec logs détaillés
+    const uniqueNewMedia = newMedia.filter((media, index) => {
       // Créer un objet File temporaire pour la vérification
       const tempFile = {
         name: media.name,
@@ -45,17 +46,29 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
       
       const isDuplicate = isMediaAlreadyImported(tempFile);
       if (isDuplicate) {
-        console.log(`⚠️ Doublon détecté: ${media.name}`);
+        console.log(`⚠️ Doublon détecté [${index + 1}/${newMedia.length}]: ${media.name}`);
+      } else {
+        console.log(`✅ Nouveau média [${index + 1}/${newMedia.length}]: ${media.name}`);
       }
       return !isDuplicate;
     });
 
-    console.log(`✅ ${uniqueNewMedia.length} médias uniques à ajouter`);
+    console.log(`📈 Résultat filtrage: ${uniqueNewMedia.length}/${newMedia.length} médias uniques à ajouter`);
 
     if (uniqueNewMedia.length > 0) {
       const updatedMedia = [...importedMedia, ...uniqueNewMedia];
       console.log(`📝 Mise à jour du store: ${importedMedia.length} → ${updatedMedia.length} médias`);
+      
+      // Log détaillé des médias ajoutés
+      uniqueNewMedia.forEach((media, index) => {
+        console.log(`➕ Ajout [${index + 1}]: ${media.name} (${media.type})`);
+      });
+      
       set({ importedMedia: updatedMedia });
+      
+      // Vérifier immédiatement après la mise à jour
+      const currentState = get();
+      console.log(`🔍 Vérification post-ajout: ${currentState.importedMedia.length} médias dans le store`);
       
       // Forcer la sauvegarde immédiatement
       console.log(`💾 Sauvegarde forcée des ${updatedMedia.length} médias...`);
@@ -69,6 +82,8 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
       } else {
         console.error(`❌ Échec de sauvegarde: aucune donnée dans localStorage`);
       }
+    } else {
+      console.log(`⏭️ Aucun nouveau média à ajouter (tous sont des doublons)`);
     }
     
     return uniqueNewMedia;
@@ -76,6 +91,10 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
 
   removeImportedMedia: (id: string) => {
     const { importedMedia, saveToStorage } = get();
+    
+    // Ne pas nettoyer les URLs blob immédiatement car elles peuvent être utilisées ailleurs
+    // Le navigateur les nettoiera automatiquement quand elles ne sont plus référencées
+    
     const updatedMedia = importedMedia.filter(media => media.id !== id);
     set({ importedMedia: updatedMedia });
     saveToStorage();
@@ -143,8 +162,8 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
           typeof media === 'object' &&
           media.id &&
           media.type &&
-          media.name &&
-          media.fileData // Vérifier que les données base64 existent
+          media.name
+          // Ne plus vérifier fileData car on ne le stocke plus
         );
 
         if (validParsedMedia.length !== parsedMedia.length) {
@@ -209,8 +228,8 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
       // Si le storage est plein, essayer de nettoyer les anciens médias
       if (error instanceof DOMException && error.code === 22) {
         console.warn('Storage plein, nettoyage des anciens médias...');
-        // Garder seulement les 20 médias les plus récents pour économiser l'espace
-        const recentMedia = importedMedia.slice(-20);
+        // Garder seulement les 50 médias les plus récents pour économiser l'espace
+        const recentMedia = importedMedia.slice(-50);
         set({ importedMedia: recentMedia });
         try {
           const dataToSave = recentMedia.map(media => ({
@@ -242,6 +261,8 @@ const useImportedMediaStore = create<ImportedMediaStore>((set, get) => ({
 
   clearAllData: () => {
     console.log('Nettoyage forcé de toutes les données...');
+    
+    // Ne pas nettoyer les URLs blob - laisser le navigateur les gérer
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(STORAGE_VERSION_KEY);
     set({
