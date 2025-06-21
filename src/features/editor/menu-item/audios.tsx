@@ -8,6 +8,7 @@ import { Music } from "lucide-react";
 import { useIsDraggingOverTimeline } from "../hooks/is-dragging-over-timeline";
 import React from "react";
 import { generateId } from "@designcombo/timeline";
+import { useThumbnailSelectionStore } from "../store/use-thumbnail-selection-store";
 
 export const Audios = () => {
   const isDraggingOverTimeline = useIsDraggingOverTimeline();
@@ -52,6 +53,11 @@ const AudioItem = ({
   audio: Partial<IAudio>;
   shouldDisplayPreview: boolean;
 }) => {
+  const { isSelected, setSelectedItem, setSelectedItemOnAdd } = useThumbnailSelectionStore();
+  
+  const audioId = audio.id || `audio-${Date.now()}`;
+  const isCurrentlySelected = isSelected(audioId, 'audio');
+
   const style = React.useMemo(
     () => ({
       backgroundImage: `url(https://cdn.designcombo.dev/thumbnails/music-preview.png)`,
@@ -62,6 +68,10 @@ const AudioItem = ({
     [],
   );
 
+  const handleClick = () => {
+    setSelectedItem({ id: audioId, type: 'audio' });
+  };
+
   return (
     <Draggable
       data={audio}
@@ -70,12 +80,19 @@ const AudioItem = ({
     >
       <div
         draggable={false}
-        onDoubleClick={() => handleAddAudio(audio)}
+        onClick={handleClick}
+        onDoubleClick={() => {
+          handleAddAudio(audio);
+          // Sélectionner cette miniature quand elle est ajoutée à la timeline
+          setSelectedItemOnAdd(audioId, 'audio');
+        }}
         style={{
           display: "grid",
           gridTemplateColumns: "48px 1fr",
         }}
-        className="flex cursor-pointer gap-4 px-2 py-1 text-sm hover:bg-zinc-800/70"
+        className={`thumbnail-container flex cursor-pointer gap-4 px-2 py-1 text-sm hover:bg-zinc-800/70 ${
+          isCurrentlySelected ? 'thumbnail-selected' : ''
+        }`}
       >
         <div className="flex h-12 items-center justify-center bg-zinc-800">
           <Music width={16} />

@@ -22,6 +22,13 @@ import { Slider } from "@/components/ui/slider";
 import { useEffect, useState } from "react";
 import useUpdateAnsestors from "../hooks/use-update-ansestors";
 import { ITimelineScaleState } from "@designcombo/types";
+import {
+  getAllClipsSorted,
+  findPreviousClip,
+  findNextClip,
+  navigateToClip,
+  navigateToClipEnd
+} from "../utils/clip-navigation";
 
 const IconPlayerPlayFilled = ({ size }: { size: number }) => (
   <svg
@@ -82,7 +89,7 @@ const IconPlayerSkipForward = ({ size }: { size: number }) => (
 );
 const Header = () => {
   const [playing, setPlaying] = useState(false);
-  const { duration, fps, scale, playerRef, activeIds, trackItemDetailsMap, size } = useStore();
+  const { duration, fps, scale, playerRef, activeIds, trackItemDetailsMap, trackItemsMap, trackItemIds, size } = useStore();
 
   useUpdateAnsestors({ playing, playerRef });
 
@@ -182,6 +189,48 @@ const Header = () => {
     dispatch(PLAYER_PAUSE);
   };
 
+  const handlePreviousClip = () => {
+    if (!playerRef?.current) return;
+    
+    // Récupérer la position actuelle en millisecondes
+    const currentTimeMs = (currentFrame / fps) * 1000;
+    
+    // Récupérer tous les clips triés par position
+    const clips = getAllClipsSorted({
+      trackItemsMap,
+      trackItemIds,
+      fps,
+      playerRef
+    });
+    
+    // Trouver le clip précédent et naviguer vers son début
+    const previousClip = findPreviousClip(clips, currentTimeMs);
+    if (previousClip) {
+      navigateToClip(previousClip, fps, playerRef);
+    }
+  };
+
+  const handleNextClip = () => {
+    if (!playerRef?.current) return;
+    
+    // Récupérer la position actuelle en millisecondes
+    const currentTimeMs = (currentFrame / fps) * 1000;
+    
+    // Récupérer tous les clips triés par position
+    const clips = getAllClipsSorted({
+      trackItemsMap,
+      trackItemIds,
+      fps,
+      playerRef
+    });
+    
+    // Trouver le clip suivant et naviguer vers sa fin
+    const nextClip = findNextClip(clips, currentTimeMs);
+    if (nextClip) {
+      navigateToClipEnd(nextClip, fps, playerRef);
+    }
+  };
+
   useEffect(() => {
     playerRef?.current?.addEventListener("play", () => {
       setPlaying(true);
@@ -268,7 +317,7 @@ const Header = () => {
           </div>
           <div className="flex items-center justify-center">
             <div>
-              <Button onClick={doActiveDelete} variant={"ghost"} size={"icon"}>
+              <Button onClick={handlePreviousClip} variant={"ghost"} size={"icon"}>
                 <IconPlayerSkipBack size={14} />
               </Button>
               <Button
@@ -287,7 +336,7 @@ const Header = () => {
                   <IconPlayerPlayFilled size={14} />
                 )}
               </Button>
-              <Button onClick={doActiveSplit} variant={"ghost"} size={"icon"}>
+              <Button onClick={handleNextClip} variant={"ghost"} size={"icon"}>
                 <IconPlayerSkipForward size={14} />
               </Button>
             </div>

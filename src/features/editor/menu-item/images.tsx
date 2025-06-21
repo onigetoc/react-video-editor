@@ -8,6 +8,7 @@ import React from "react";
 import { useIsDraggingOverTimeline } from "../hooks/is-dragging-over-timeline";
 import { ADD_ITEMS } from "@designcombo/state";
 import { Masonry } from "masonic";
+import { useThumbnailSelectionStore } from "../store/use-thumbnail-selection-store";
 
 interface MasonryImageData extends Partial<IImage> {
   _key: string;
@@ -45,6 +46,10 @@ export const Images = () => {
 // Composant pour Masonic - Images avec nom de fichier affiché
 const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: number }) => {
   const isDraggingOverTimeline = useIsDraggingOverTimeline();
+  const { isSelected, setSelectedItem, setSelectedItemOnAdd } = useThumbnailSelectionStore();
+
+  const imageId = data.id || data._key || `image-${Date.now()}`;
+  const isCurrentlySelected = isSelected(imageId, 'image');
 
   const style = React.useMemo(
     () => ({
@@ -55,6 +60,10 @@ const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: numbe
     }),
     [data.preview],
   );
+
+  const handleClick = () => {
+    setSelectedItem({ id: imageId, type: 'image' });
+  };
 
   const handleDoubleClick = () => {
     const id = generateId();
@@ -76,6 +85,8 @@ const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: numbe
         ],
       },
     });
+    // Sélectionner cette miniature quand elle est ajoutée à la timeline
+    setSelectedItemOnAdd(imageId, 'image');
   };
 
   // Extraire le nom du fichier depuis l'URL ou utiliser un nom par défaut
@@ -97,8 +108,11 @@ const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: numbe
         shouldDisplayPreview={!isDraggingOverTimeline}
       >
         <div
+          onClick={handleClick}
           onDoubleClick={handleDoubleClick}
-          className="flex w-full items-center justify-center overflow-hidden bg-background relative"
+          className={`thumbnail-container flex w-full items-center justify-center overflow-hidden bg-background relative ${
+            isCurrentlySelected ? 'thumbnail-selected' : ''
+          }`}
         >
           <img
             draggable={false}

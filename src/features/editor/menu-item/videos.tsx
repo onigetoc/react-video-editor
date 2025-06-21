@@ -1,18 +1,28 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Draggable from "@/components/shared/draggable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Droppable } from "@/components/ui/droppable";
+import { Input } from "@/components/ui/input";
 import { VIDEOS } from "../data/video";
 import { dispatch } from "@designcombo/events";
-import { ADD_VIDEO, ADD_AUDIO, ADD_IMAGE } from "@designcombo/state";
+import { ADD_VIDEO, ADD_AUDIO, ADD_IMAGE, ADD_ITEMS } from "@designcombo/state";
 import { generateId } from "@designcombo/timeline";
 import { IVideo } from "@designcombo/types";
 import { useIsDraggingOverTimeline } from "../hooks/is-dragging-over-timeline";
-import { PlusIcon } from "@radix-ui/react-icons";
+import { PlusIcon, MagnifyingGlassIcon } from "@radix-ui/react-icons";
 import { Music, Image, Video, AudioLines } from "lucide-react";
 import useImportedMediaStore from "../store/use-imported-media-store";
 import { MediaType, ImportedMedia } from "../interfaces/editor";
 import { Masonry } from "masonic";
+import {
+  usePexelsSearch,
+  PexelsPhoto,
+  PexelsVideo,
+  PexelsMediaType,
+  getPexelsThumbnailUrl,
+  getFullHDUrl
+} from "../hooks/usePexelsSearch";
+import { useThumbnailSelectionStore } from "../store/use-thumbnail-selection-store";
 
 type TabType = 'import' | 'video' | 'pexels';
 
@@ -26,6 +36,11 @@ interface MasonryVideoData extends Partial<IVideo> {
 
 export const Videos = () => {
   const [activeTab, setActiveTab] = useState<TabType>('import');
+  
+  // States pour la recherche Pexels
+  const [pexelsQuery, setPexelsQuery] = useState('');
+  const [pexelsMediaType, setPexelsMediaType] = useState<PexelsMediaType>('photos');
+  const { data: pexelsData, loading: pexelsLoading, error: pexelsError, search: searchPexels } = usePexelsSearch();
   
   // Utiliser le store global pour les médias importés
   const {
@@ -241,6 +256,39 @@ export const Videos = () => {
     
     console.log(`🎬 FIN UPLOAD`);
   };
+// Fonctions pour la recherche Pexels
+  const handlePexelsSearch = useCallback(async () => {
+    if (pexelsQuery.trim()) {
+      await searchPexels({
+        query: pexelsQuery.trim(),
+        type: pexelsMediaType,
+        perPage: 20
+      });
+    }
+  }, [pexelsQuery, pexelsMediaType, searchPexels]);
+
+  const handlePexelsQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPexelsQuery(e.target.value);
+  };
+
+  const handlePexelsTypeChange = (type: PexelsMediaType) => {
+    setPexelsMediaType(type);
+    // Relancer automatiquement la recherche si il y a déjà un terme
+    if (pexelsQuery.trim()) {
+      searchPexels({
+        query: pexelsQuery.trim(),
+        type: type,
+        perPage: 20
+      });
+    }
+  };
+
+  // Effet pour rechercher quand on appuie sur Entrée
+  const handlePexelsKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handlePexelsSearch();
+    }
+  };
 
 
   const renderTabContent = () => {
@@ -319,14 +367,128 @@ export const Videos = () => {
       
       case 'pexels':
         return (
-          <div className="flex items-center justify-center h-full px-4">
-            <div className="text-center">
-              <p className="text-sm font-medium text-muted-foreground">
-                Intégration Pexels à venir
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                L'API Pexels sera intégrée prochainement
-              </p>
+          <div className="flex flex-col h-full">
+            {/* Interface de recherche */}
+            <div className="px-4 pt-4 pb-3 border-b border-border">
+              {/* Input de recherche */}
+              <div className="relative mb-3">
+                <Input
+                  type="text"
+                  placeholder="Media search on Pexels..."
+                  value={pexelsQuery}
+                  onChange={handlePexelsQueryChange}
+                  onKeyPress={handlePexelsKeyPress}
+                  className="w-full pr-10"
+                />
+                <button
+                  onClick={handlePexelsSearch}
+                  disabled={!pexelsQuery.trim() || pexelsLoading}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <MagnifyingGlassIcon className="size-4 text-muted-foreground" />
+                </button>
+              </div>
+              
+              {/* Boutons Image/Video */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handlePexelsTypeChange('photos')}
+                  className={`${
+                    pexelsMediaType === 'photos'
+                      ? 'font-bold text-white'
+                      : 'font-normal text-text-primary'
+                  } hover:text-foreground transition-colors`}
+                >
+                  Images
+                </button>
+                <span className="text-border">|</span>
+                <button
+                  onClick={() => handlePexelsTypeChange('videos')}
+                  className={`${
+                    pexelsMediaType === 'videos'
+                      ? 'font-bold text-white'
+                      : 'font-normal text-text-primary'
+                  } hover:text-foreground transition-colors`}
+                >
+                  Videos
+                </button>
+              </div>
+            </div>
+
+            {/* Contenu des résultats */}
+            <div className="flex-1">
+              {pexelsLoading && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-sm text-muted-foreground">
+                      Recherche en cours...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {pexelsError && (
+                <div className="flex items-center justify-center h-full px-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-red-500 mb-1">
+                      Erreur de recherche
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {pexelsError}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!pexelsLoading && !pexelsError && !pexelsData && !pexelsQuery && (
+                <div className="flex items-center justify-center h-full px-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Search {pexelsMediaType === 'photos' ? 'images' : 'videos'} on Pexels
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Enter a search term above
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!pexelsLoading && !pexelsError && pexelsData && (
+                <div className="px-4 pb-4">
+                  <Masonry
+                    key={`masonry-pexels-${pexelsMediaType}-${pexelsData.total_results}`}
+                    items={(() => {
+                      const items = pexelsMediaType === 'photos' ? pexelsData.photos || [] : pexelsData.videos || [];
+                      return items.map((item, index) => ({
+                        ...item,
+                        _key: `pexels-${pexelsMediaType}-${item.id}-${index}`
+                      }));
+                    })()}
+                    columnWidth={120}
+                    columnGutter={8}
+                    rowGutter={8}
+                    render={MasonryPexelsItem}
+                    overscanBy={2}
+                    itemKey={(data) => data._key}
+                  />
+                </div>
+              )}
+
+              {!pexelsLoading && !pexelsError && pexelsData &&
+                ((pexelsMediaType === 'photos' && (!pexelsData.photos || pexelsData.photos.length === 0)) ||
+                 (pexelsMediaType === 'videos' && (!pexelsData.videos || pexelsData.videos.length === 0))) && (
+                <div className="flex items-center justify-center h-full px-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Aucun résultat trouvé
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Essayez un autre terme de recherche
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -375,6 +537,9 @@ export const Videos = () => {
 const MasonryMediaItem = ({ data, width }: { data: ImportedMedia; width: number }) => {
   const [isHovered, setIsHovered] = useState(false);
   const isDraggingOverTimeline = useIsDraggingOverTimeline();
+  const { isSelected, setSelectedItem, setSelectedItemOnAdd } = useThumbnailSelectionStore();
+
+  const isCurrentlySelected = isSelected(data.id, data.type);
 
   const style = useMemo(
     () => ({
@@ -386,6 +551,10 @@ const MasonryMediaItem = ({ data, width }: { data: ImportedMedia; width: number 
     }),
     [data.preview, data.type],
   );
+
+  const handleClick = () => {
+    setSelectedItem({ id: data.id, type: data.type });
+  };
 
   const handleDoubleClick = () => {
     switch (data.type) {
@@ -413,6 +582,8 @@ const MasonryMediaItem = ({ data, width }: { data: ImportedMedia; width: number 
         });
         break;
     }
+    // Sélectionner cette miniature quand elle est ajoutée à la timeline
+    setSelectedItemOnAdd(data.id, data.type);
   };
 
   const handleRemoveClick = (e: React.MouseEvent) => {
@@ -473,9 +644,12 @@ const MasonryMediaItem = ({ data, width }: { data: ImportedMedia; width: number 
           className="media-item-container"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
+          onClick={handleClick}
           onDoubleClick={handleDoubleClick}
         >
-          <div className="flex w-full items-center justify-center overflow-hidden bg-background relative">
+          <div className={`thumbnail-container flex w-full items-center justify-center overflow-hidden bg-background relative ${
+            isCurrentlySelected ? 'thumbnail-selected' : ''
+          }`}>
             {renderThumbnail()}
             
             {/* Icône de type de média */}
@@ -506,6 +680,10 @@ const MasonryMediaItem = ({ data, width }: { data: ImportedMedia; width: number 
 // Composant pour Masonic - Vidéos par défaut avec nom de fichier affiché
 const MasonryVideoItem = ({ data, width }: { data: Partial<IVideo>; width: number }) => {
   const isDraggingOverTimeline = useIsDraggingOverTimeline();
+  const { isSelected, setSelectedItem, setSelectedItemOnAdd } = useThumbnailSelectionStore();
+
+  const videoId = data.id || `video-${Date.now()}`;
+  const isCurrentlySelected = isSelected(videoId, 'video');
 
   const style = React.useMemo(
     () => ({
@@ -517,6 +695,10 @@ const MasonryVideoItem = ({ data, width }: { data: Partial<IVideo>; width: numbe
     [data.preview],
   );
 
+  const handleClick = () => {
+    setSelectedItem({ id: videoId, type: 'video' });
+  };
+
   const handleDoubleClick = () => {
     dispatch(ADD_VIDEO, {
       payload: data,
@@ -525,6 +707,8 @@ const MasonryVideoItem = ({ data, width }: { data: Partial<IVideo>; width: numbe
         scaleMode: "fit",
       },
     });
+    // Sélectionner cette miniature quand elle est ajoutée à la timeline
+    setSelectedItemOnAdd(videoId, 'video');
   };
 
   // Extraire le nom du fichier depuis l'URL ou utiliser un nom par défaut
@@ -551,8 +735,11 @@ const MasonryVideoItem = ({ data, width }: { data: Partial<IVideo>; width: numbe
         shouldDisplayPreview={!isDraggingOverTimeline}
       >
         <div
+          onClick={handleClick}
           onDoubleClick={handleDoubleClick}
-          className="flex w-full items-center justify-center overflow-hidden bg-background relative"
+          className={`thumbnail-container flex w-full items-center justify-center overflow-hidden bg-background relative ${
+            isCurrentlySelected ? 'thumbnail-selected' : ''
+          }`}
         >
           <img
             draggable={false}
@@ -571,3 +758,194 @@ const MasonryVideoItem = ({ data, width }: { data: Partial<IVideo>; width: numbe
   );
 };
 
+
+// Composant pour Masonic - Éléments Pexels
+const MasonryPexelsItem = ({ data, width }: { data: (PexelsPhoto | PexelsVideo) & { _key: string }; width: number }) => {
+  const isDraggingOverTimeline = useIsDraggingOverTimeline();
+  const { isSelected, setSelectedItem, setSelectedItemOnAdd } = useThumbnailSelectionStore();
+
+  // Déterminer si c'est une photo ou vidéo
+  const isPhoto = 'photographer' in data;
+  const isVideo = 'user' in data;
+
+  // ID unique pour le contenu Pexels
+  const pexelsId = `pexels-${data.id}`;
+  const pexelsType = isPhoto ? 'image' : 'video';
+  const isCurrentlySelected = isSelected(pexelsId, pexelsType);
+
+  // Générer l'URL du thumbnail en utilisant les URLs Pexels valides
+  const thumbnailUrl = useMemo(() => {
+    if (isPhoto) {
+      // Pour les photos, utiliser les URLs fournies par l'API
+      return getPexelsThumbnailUrl(data as PexelsPhoto, '16:9');
+    } else if (isVideo) {
+      // Pour les vidéos, utiliser l'image de prévisualisation
+      return data.image;
+    }
+    return '';
+  }, [data, isPhoto, isVideo]);
+
+  // URL complète HD pour le lecteur vidéo
+  const fullHDUrl = useMemo(() => {
+    return getFullHDUrl(data, '16:9');
+  }, [data]);
+
+  // Nom à afficher (selon vos spécifications)
+  const displayName = useMemo(() => {
+    if (isPhoto) {
+      return data.alt || `Photo by ${data.photographer}`;
+    } else if (isVideo) {
+      return `By: ${data.user.name}`;
+    }
+    return 'Média Pexels';
+  }, [data, isPhoto, isVideo]);
+
+  const style = useMemo(
+    () => ({
+      backgroundImage: `url(${thumbnailUrl})`,
+      backgroundSize: "cover",
+      width: "80px",
+      height: "80px",
+    }),
+    [thumbnailUrl],
+  );
+
+  const handleClick = () => {
+    setSelectedItem({ id: pexelsId, type: pexelsType });
+  };
+
+  const handleDoubleClick = () => {
+    if (isPhoto) {
+      // Ajouter l'image à la timeline (utiliser ADD_ITEMS comme dans images.tsx)
+      const id = generateId();
+      dispatch(ADD_ITEMS, {
+        payload: {
+          trackItems: [
+            {
+              id,
+              type: "image",
+              display: {
+                from: 0,
+                to: 5000,
+              },
+              details: {
+                src: fullHDUrl,
+              },
+              metadata: {
+                photographer: data.photographer,
+                photographer_url: data.photographer_url,
+                pexels_url: data.url,
+                source: 'pexels'
+              },
+            },
+          ],
+        },
+      });
+    } else if (isVideo) {
+      // Ajouter la vidéo à la timeline
+      // Trouver le meilleur fichier vidéo (HD ou meilleure qualité disponible)
+      const videoFile = data.video_files.find(file => file.quality === 'hd') || data.video_files[0];
+      
+      dispatch(ADD_VIDEO, {
+        payload: {
+          id: data.id.toString(),
+          details: {
+            src: videoFile?.link || data.image
+          },
+          preview: data.image,
+          metadata: {
+            user: data.user.name,
+            user_url: data.user.url,
+            pexels_url: data.url,
+            duration: data.duration,
+            source: 'pexels'
+          }
+        },
+        options: {
+          resourceId: "main",
+          scaleMode: "fit",
+        },
+      });
+    }
+    // Sélectionner cette miniature quand elle est ajoutée à la timeline
+    setSelectedItemOnAdd(pexelsId, pexelsType);
+  };
+
+  // Données pour le drag & drop (format simplifié pour éviter les erreurs de sérialisation)
+  const dragData = useMemo(() => {
+    if (isPhoto) {
+      return {
+        id: data.id.toString(),
+        type: 'image',
+        details: { src: fullHDUrl },
+        preview: thumbnailUrl,
+        name: displayName,
+        metadata: {
+          photographer: data.photographer || '',
+          photographer_url: data.photographer_url || '',
+          pexels_url: data.url || '',
+          source: 'pexels',
+          previewUrl: thumbnailUrl,
+        }
+      };
+    } else if (isVideo) {
+      const videoFile = data.video_files?.find(file => file.quality === 'hd') || data.video_files?.[0];
+      return {
+        id: data.id.toString(),
+        type: 'video',
+        details: { src: videoFile?.link || data.image },
+        preview: data.image,
+        name: displayName,
+        metadata: {
+          user: data.user?.name || '',
+          user_url: data.user?.url || '',
+          pexels_url: data.url || '',
+          duration: data.duration || 0,
+          source: 'pexels',
+          previewUrl: data.image,
+        }
+      };
+    }
+    // Ce cas ne devrait jamais se produire car on vérifie isPhoto ou isVideo
+    return null;
+  }, [data, isPhoto, isVideo, fullHDUrl, thumbnailUrl, displayName]);
+
+  return (
+    <div style={{ width }} className="masonic-media-item">
+      <Draggable
+        data={dragData || undefined}
+        renderCustomPreview={<div style={style} className="draggable" />}
+        shouldDisplayPreview={!isDraggingOverTimeline}
+      >
+        <div
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          className={`thumbnail-container flex w-full items-center justify-center overflow-hidden bg-background relative ${
+            isCurrentlySelected ? 'thumbnail-selected' : ''
+          }`}
+        >
+          <img
+            draggable={false}
+            src={thumbnailUrl}
+            className="h-full w-full rounded-md object-cover cursor-pointer"
+            alt={displayName}
+          />
+          
+          {/* Icône de type de média */}
+          <div className="absolute bottom-1 right-0 mr-1.5 mb-2.5 bg-blue-600/70 rounded p-1 flex items-center justify-center">
+            {isPhoto ? (
+              <Image size={16} className="text-white" />
+            ) : (
+              <Video size={16} className="text-white" />
+            )}
+          </div>
+        </div>
+      </Draggable>
+      
+      {/* Nom du média avec ellipsis */}
+      <div className="masonic-media-name" title={displayName}>
+        {displayName}
+      </div>
+    </div>
+  );
+};
