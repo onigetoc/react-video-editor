@@ -8,7 +8,7 @@ export interface PexelsPhoto {
   url: string;
   photographer: string;
   photographer_url: string;
-  photographer_id: number;
+  photographer_id: string;
   avg_color: string;
   src: {
     original: string;
@@ -58,8 +58,8 @@ export interface PexelsSearchResponse {
   per_page: number;
   photos?: PexelsPhoto[];
   videos?: PexelsVideo[];
-  next_page?: string;
-  prev_page?: string;
+  next_page?: string | number;
+  prev_page?: string | number;
 }
 
 export type PexelsMediaType = 'photos' | 'videos';
@@ -68,13 +68,17 @@ interface UsePexelsSearchOptions {
   query: string;
   type: PexelsMediaType;
   perPage?: number;
+  page?: number;
 }
 
 interface UsePexelsSearchResult {
   data: PexelsSearchResponse | null;
+  allPexelsItems: (PexelsPhoto | PexelsVideo)[];
   loading: boolean;
   error: string | null;
-  search: (options: UsePexelsSearchOptions) => Promise<void>;
+  search: (options: UsePexelsSearchOptions, append?: boolean) => Promise<void>;
+  currentPage: number;
+  totalResults: number;
 }
 
 // Utilitaire pour générer les URLs de thumbnails personnalisées
@@ -103,10 +107,10 @@ const searchWithFetch = async (options: UsePexelsSearchOptions): Promise<PexelsS
   const apiKey = import.meta.env.VITE_PEXELS_API_KEY;
   
   if (!apiKey) {
-    throw new Error('Clé API Pexels manquante. Vérifiez votre fichier .env');
+    throw new Error('Pexels API key missing. Check your .env file');
   }
 
-  const { query, type, perPage = 15 } = options;
+  const { query, type, perPage = 15, page = 1 } = options;
   
   // URLs selon le type de recherche
   const baseUrl = type === 'photos' 
@@ -116,6 +120,7 @@ const searchWithFetch = async (options: UsePexelsSearchOptions): Promise<PexelsS
   const url = new URL(baseUrl);
   url.searchParams.append('query', query);
   url.searchParams.append('per_page', perPage.toString());
+  url.searchParams.append('page', page.toString());
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -125,7 +130,7 @@ const searchWithFetch = async (options: UsePexelsSearchOptions): Promise<PexelsS
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Erreur API Pexels (${response.status}): ${errorText}`);
+    throw new Error(`Pexels API Error (${response.status}): ${errorText}`);
   }
 
   return response.json();
@@ -138,15 +143,23 @@ const searchWithPackage = async (options: UsePexelsSearchOptions): Promise<Pexel
     const { createClient } = await import('pexels');
     const client = createClient(import.meta.env.VITE_PEXELS_API_KEY);
     
-    const { query, type, perPage = 15 } = options;
+    const { query, type, perPage = 15, page = 1 } = options;
     
+    let result;
     if (type === 'photos') {
-      return await client.photos.search({ query, per_page: perPage });
+      result = await client.photos.search({ query, per_page: perPage, page });
     } else {
-      return await client.videos.search({ query, per_page: perPage });
+      result = await client.videos.search({ query, per_page: perPage, page });
     }
+
+    // Vérifier si le résultat est une erreur
+    if ('error' in result) {
+      throw new Error(result.error);
+    }
+
+    return result;
   } catch (error) {
-    console.warn('Package pexels non disponible, utilisation de fetch:', error);
+    console.warn('Pexels package not available, falling back to fetch:', error);
     // Fallback vers fetch
     return searchWithFetch(options);
   }
@@ -154,12 +167,15 @@ const searchWithPackage = async (options: UsePexelsSearchOptions): Promise<Pexel
 
 export const usePexelsSearch = (): UsePexelsSearchResult => {
   const [data, setData] = useState<PexelsSearchResponse | null>(null);
+  const [allPexelsItems, setAllPexelsItems] = useState<(PexelsPhoto | PexelsVideo)[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
 
-  const search = useCallback(async (options: UsePexelsSearchOptions) => {
+  const search = useCallback(async (options: UsePexelsSearchOptions, append: boolean = false) => {
     if (!options.query.trim()) {
-      setError('Veuillez saisir un terme de recherche');
+      setError('Please enter a search term');
       return;
     }
 
@@ -167,18 +183,32 @@ export const usePexelsSearch = (): UsePexelsSearchResult => {
     setError(null);
 
     try {
-      console.log(`🔍 Recherche Pexels: "${options.query}" (${options.type})`);
+      console.log(`🔍 Pexels Search: "${options.query}" (Type: ${options.type}, Page: ${options.page || 1})`);
       
-      // Tenter d'abord avec le package, puis fallback vers fetch
       const result = await searchWithPackage(options);
       
-      console.log(`✅ Résultats trouvés:`, result);
+      console.log(`✅ Results found:`, result);
       setData(result);
+      setCurrentPage(result.page);
+      setTotalResults(result.total_results);
+
+      if (append) {
+        setAllPexelsItems(prevItems => {
+          const newItems = options.type === 'photos' ? result.photos || [] : result.videos || [];
+          return [...prevItems, ...newItems];
+        });
+      } else {
+        setAllPexelsItems(options.type === 'photos' ? result.photos || [] : result.videos || []);
+      }
+
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erreur de recherche Pexels';
-      console.error('❌ Erreur recherche Pexels:', errorMessage);
+      const errorMessage = err instanceof Error ? err.message : 'Pexels search error';
+      console.error('❌ Pexels search error:', errorMessage);
       setError(errorMessage);
       setData(null);
+      if (!append) { // Clear items only if it's a new search, not an append failure
+        setAllPexelsItems([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -186,8 +216,11 @@ export const usePexelsSearch = (): UsePexelsSearchResult => {
 
   return {
     data,
+    allPexelsItems,
     loading,
     error,
     search,
+    currentPage,
+    totalResults,
   };
 };

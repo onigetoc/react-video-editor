@@ -1,20 +1,66 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { IMAGES } from "../data/images";
 import { dispatch } from "@designcombo/events";
 import { generateId } from "@designcombo/timeline";
 import Draggable from "@/components/shared/draggable";
 import { IImage } from "@designcombo/types";
-import React from "react";
+import React, { useRef } from "react";
 import { useIsDraggingOverTimeline } from "../hooks/is-dragging-over-timeline";
 import { ADD_ITEMS } from "@designcombo/state";
-import { Masonry } from "masonic";
+import { Masonry, useInfiniteLoader } from "masonic";
 import { useThumbnailSelectionStore } from "../store/use-thumbnail-selection-store";
+import { usePexelsSearch, PexelsPhoto, PexelsVideo } from "../hooks/usePexelsSearch";
 
 interface MasonryImageData extends Partial<IImage> {
   _key: string;
+  preview: string; // Ajouté pour les images Pexels
+  details: {
+    src: string; // Ajouté pour les images Pexels
+  };
 }
 
 export const Images = () => {
+  const masonryRef = useRef<Masonry>(null);
+  const { allPexelsItems, search, loading, currentPage, totalResults } = usePexelsSearch();
+  const [pexelsImages, setPexelsImages] = React.useState<MasonryImageData[]>([]);
+  const [currentSearchQuery, setCurrentSearchQuery] = React.useState<string>('');
+
+  React.useEffect(() => {
+    // Initial load or when allPexelsItems changes
+    setPexelsImages(allPexelsItems.map((item, index) => ({
+      ...item,
+      id: item.id.toString(),
+      _key: item.id.toString(),
+      preview: 'src' in item ? item.src.medium : item.image, // Use appropriate preview URL
+      details: {
+        src: 'src' in item ? item.src.original : item.image, // Use appropriate full URL
+      }
+    })));
+  }, [allPexelsItems]);
+
+  const maybeLoadMore = useInfiniteLoader(
+    async (startIndex, stopIndex, currentItems) => {
+      if (loading || !currentSearchQuery) return;
+
+      const nextPage = Math.floor(startIndex / 15) + 1; // Assuming perPage is 15
+      if (nextPage > currentPage && pexelsImages.length < totalResults) {
+        console.log(`Loading more Pexels images: Page ${nextPage}`);
+        await search({ query: currentSearchQuery, type: 'photos', page: nextPage }, true);
+      }
+    },
+    {
+      isItemLoaded: (index, items) => !!items[index],
+      minimumBatchSize: 15, // Match perPage in usePexelsSearch
+      threshold: 5,
+    }
+  );
+
+  React.useEffect(() => {
+    // Initial search for popular images
+    if (!currentSearchQuery) {
+      setCurrentSearchQuery('popular');
+      search({ query: 'popular', type: 'photos' });
+    }
+  }, [search, currentSearchQuery]);
 
   return (
     <div className="flex flex-1 flex-col h-full">
@@ -24,18 +70,15 @@ export const Images = () => {
       <ScrollArea className="flex-1">
         <div className="px-4 pb-4">
           <Masonry
-            key={`masonry-images-${IMAGES.length}`}
-            items={IMAGES.map((image, index) => ({
-              ...image,
-              id: image.id || `image-${index}-${Date.now()}`,
-              _key: image.id || `image-${index}-${Date.now()}`
-            }))}
+            ref={masonryRef}
+            items={pexelsImages}
             columnWidth={120}
             columnGutter={8}
             rowGutter={8}
             render={MasonryImageItem}
             overscanBy={2}
             itemKey={(data: MasonryImageData) => data?._key || 'fallback-key'}
+            onRender={maybeLoadMore}
           />
         </div>
       </ScrollArea>
@@ -47,6 +90,13 @@ export const Images = () => {
 const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: number }) => {
   const isDraggingOverTimeline = useIsDraggingOverTimeline();
   const { isSelected, setSelectedItem, setSelectedItemOnAdd } = useThumbnailSelectionStore();
+  const [isImageLoaded, setIsImageLoaded] = React.useState(false);
+
+  const handleImageLoad = () => {
+    setIsImageLoaded(true);
+    // Potentiellement déclencher un recalcul de Masonry ici si nécessaire
+    // masonryRef.current?.clearPositions(); // Ceci sera géré au niveau parent
+  };
 
   const imageId = data.id || data._key || `image-${Date.now()}`;
   const isCurrentlySelected = isSelected(imageId, 'image');
@@ -117,9 +167,15 @@ const MasonryImageItem = ({ data, width }: { data: Partial<IImage>; width: numbe
           <img
             draggable={false}
             src={data.preview}
-            className="h-full w-full rounded-md object-cover cursor-pointer"
+            className={`h-full w-full rounded-md object-cover cursor-pointer ${isImageLoaded ? '' : 'opacity-0'}`}
             alt="image"
+            onLoad={handleImageLoad}
           />
+          {!isImageLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-200 animate-pulse rounded-md">
+              Chargement...
+            </div>
+          )}
         </div>
       </Draggable>
       
