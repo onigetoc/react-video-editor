@@ -8,7 +8,7 @@ export interface PexelsPhoto {
   url: string;
   photographer: string;
   photographer_url: string;
-  photographer_id: string;
+  photographer_id: number | string;
   avg_color: string;
   src: {
     original: string;
@@ -58,8 +58,8 @@ export interface PexelsSearchResponse {
   per_page: number;
   photos?: PexelsPhoto[];
   videos?: PexelsVideo[];
-  next_page?: string | number;
-  prev_page?: string | number;
+  next_page?: string;
+  prev_page?: string;
 }
 
 export type PexelsMediaType = 'photos' | 'videos';
@@ -68,17 +68,17 @@ interface UsePexelsSearchOptions {
   query: string;
   type: PexelsMediaType;
   perPage?: number;
-  page?: number;
+  page?: number; // Ajout du paramètre de page
 }
 
 interface UsePexelsSearchResult {
   data: PexelsSearchResponse | null;
-  allPexelsItems: (PexelsPhoto | PexelsVideo)[];
   loading: boolean;
   error: string | null;
-  search: (options: UsePexelsSearchOptions, append?: boolean) => Promise<void>;
-  currentPage: number;
-  totalResults: number;
+  search: (options: UsePexelsSearchOptions, append?: boolean) => Promise<void>; // Ajout du paramètre append
+  loadNextPage: () => Promise<void>; // Nouvelle fonction pour charger la page suivante
+  currentPage: number; // Ajout de l'état de la page actuelle
+  hasMore: boolean; // Indique s'il y a plus de pages à charger
 }
 
 // Utilitaire pour générer les URLs de thumbnails personnalisées
@@ -107,20 +107,20 @@ const searchWithFetch = async (options: UsePexelsSearchOptions): Promise<PexelsS
   const apiKey = import.meta.env.VITE_PEXELS_API_KEY;
   
   if (!apiKey) {
-    throw new Error('Pexels API key missing. Check your .env file');
+    throw new Error('Clé API Pexels manquante. Vérifiez votre fichier .env');
   }
 
-  const { query, type, perPage = 15, page = 1 } = options;
+  const { query, type, perPage = 15, page = 1 } = options; // Utilisation du paramètre page
   
   // URLs selon le type de recherche
-  const baseUrl = type === 'photos' 
+  const baseUrl = type === 'photos'
     ? 'https://api.pexels.com/v1/search'
     : 'https://api.pexels.com/videos/search';
   
   const url = new URL(baseUrl);
   url.searchParams.append('query', query);
   url.searchParams.append('per_page', perPage.toString());
-  url.searchParams.append('page', page.toString());
+  url.searchParams.append('page', page.toString()); // Ajout du paramètre de page
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -130,7 +130,7 @@ const searchWithFetch = async (options: UsePexelsSearchOptions): Promise<PexelsS
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Pexels API Error (${response.status}): ${errorText}`);
+    throw new Error(`Erreur API Pexels (${response.status}): ${errorText}`);
   }
 
   return response.json();
@@ -143,23 +143,15 @@ const searchWithPackage = async (options: UsePexelsSearchOptions): Promise<Pexel
     const { createClient } = await import('pexels');
     const client = createClient(import.meta.env.VITE_PEXELS_API_KEY);
     
-    const { query, type, perPage = 15, page = 1 } = options;
+    const { query, type, perPage = 15, page = 1 } = options; // Utilisation du paramètre page
     
-    let result;
     if (type === 'photos') {
-      result = await client.photos.search({ query, per_page: perPage, page });
+      return await client.photos.search({ query, per_page: perPage, page: page }); // Ajout du paramètre page
     } else {
-      result = await client.videos.search({ query, per_page: perPage, page });
+      return await client.videos.search({ query, per_page: perPage, page: page }); // Ajout du paramètre page
     }
-
-    // Vérifier si le résultat est une erreur
-    if ('error' in result) {
-      throw new Error(result.error);
-    }
-
-    return result;
   } catch (error) {
-    console.warn('Pexels package not available, falling back to fetch:', error);
+    console.warn('Package pexels non disponible, utilisation de fetch:', error);
     // Fallback vers fetch
     return searchWithFetch(options);
   }
@@ -167,60 +159,85 @@ const searchWithPackage = async (options: UsePexelsSearchOptions): Promise<Pexel
 
 export const usePexelsSearch = (): UsePexelsSearchResult => {
   const [data, setData] = useState<PexelsSearchResponse | null>(null);
-  const [allPexelsItems, setAllPexelsItems] = useState<(PexelsPhoto | PexelsVideo)[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalResults, setTotalResults] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1); // Nouvel état pour la page actuelle
+  const [currentQuery, setCurrentQuery] = useState(''); // Pour suivre la dernière requête
+  const [currentType, setCurrentType] = useState<PexelsMediaType>('photos'); // Pour suivre le dernier type
+  const [hasMore, setHasMore] = useState(true); // Pour savoir s'il y a plus de résultats
 
   const search = useCallback(async (options: UsePexelsSearchOptions, append: boolean = false) => {
     if (!options.query.trim()) {
-      setError('Please enter a search term');
+      setError('Veuillez saisir un terme de recherche');
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    try {
-      console.log(`🔍 Pexels Search: "${options.query}" (Type: ${options.type}, Page: ${options.page || 1})`);
-      
-      const result = await searchWithPackage(options);
-      
-      console.log(`✅ Results found:`, result);
-      setData(result);
-      setCurrentPage(result.page);
-      setTotalResults(result.total_results);
+    // Si ce n'est pas un append, réinitialiser la page et les données
+    if (!append) {
+      setCurrentPage(1);
+      setData(null);
+      setHasMore(true);
+    }
 
-      if (append) {
-        setAllPexelsItems(prevItems => {
-          const newItems = options.type === 'photos' ? result.photos || [] : result.videos || [];
-          return [...prevItems, ...newItems];
-        });
-      } else {
-        setAllPexelsItems(options.type === 'photos' ? result.photos || [] : result.videos || []);
-      }
+    setCurrentQuery(options.query);
+    setCurrentType(options.type);
+
+    try {
+      const pageToFetch = append ? currentPage + 1 : 1;
+      console.log(`🔍 Recherche Pexels: "${options.query}" (${options.type}), Page: ${pageToFetch}`);
+      
+      const result = await searchWithPackage({ ...options, page: pageToFetch });
+      
+      console.log(`✅ Résultats trouvés (Page ${pageToFetch}):`, result);
+
+      setData(prevData => {
+        if (append && prevData) {
+          const newPhotos = result.photos ? [...(prevData.photos || []), ...result.photos] : prevData.photos;
+          const newVideos = result.videos ? [...(prevData.videos || []), ...result.videos] : prevData.videos;
+          return {
+            ...result,
+            photos: newPhotos,
+            videos: newVideos,
+          };
+        }
+        return result;
+      });
+
+      setCurrentPage(result.page);
+      setHasMore(!!result.next_page); // next_page indique s'il y a plus de résultats
 
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Pexels search error';
-      console.error('❌ Pexels search error:', errorMessage);
+      const errorMessage = err instanceof Error ? err.message : 'Erreur de recherche Pexels';
+      console.error('❌ Erreur recherche Pexels:', errorMessage);
       setError(errorMessage);
-      setData(null);
-      if (!append) { // Clear items only if it's a new search, not an append failure
-        setAllPexelsItems([]);
+      if (!append) { // Seulement effacer les données si c'est une nouvelle recherche qui échoue
+        setData(null);
       }
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentPage]); // Dépendance à currentPage pour la fonction loadNextPage
+
+  const loadNextPage = useCallback(async () => {
+    if (loading || !hasMore || !currentQuery) {
+      console.log('⏩ Impossible de charger la page suivante: chargement en cours, pas plus de résultats, ou pas de requête.');
+      return;
+    }
+    console.log(`🔄 Chargement de la page suivante pour "${currentQuery}" (${currentType}). Page actuelle: ${currentPage}`);
+    await search({ query: currentQuery, type: currentType, perPage: data?.per_page || 20 }, true);
+  }, [loading, hasMore, currentQuery, currentType, currentPage, data, search]);
 
   return {
     data,
-    allPexelsItems,
     loading,
     error,
     search,
+    loadNextPage,
     currentPage,
-    totalResults,
+    hasMore,
   };
 };

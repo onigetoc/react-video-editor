@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Draggable from "@/components/shared/draggable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Droppable } from "@/components/ui/droppable";
@@ -13,13 +13,12 @@ import { PlusIcon, MagnifyingGlassIcon } from "@radix-ui/react-icons";
 import { Music, Image, Video, AudioLines } from "lucide-react";
 import useImportedMediaStore from "../store/use-imported-media-store";
 import { MediaType, ImportedMedia } from "../interfaces/editor";
-import { Masonry, useInfiniteLoader } from "masonic";
+import { Masonry } from "masonic";
 import {
   usePexelsSearch,
   PexelsPhoto,
   PexelsVideo,
   PexelsMediaType,
-  getPexelsThumbnailUrl,
   getFullHDUrl
 } from "../hooks/usePexelsSearch";
 import { useThumbnailSelectionStore } from "../store/use-thumbnail-selection-store";
@@ -34,20 +33,26 @@ interface MasonryVideoData extends Partial<IVideo> {
   _key: string;
 }
 
+import useStore from "../store/use-store";
+
+const getPlayerFormat = (size: { width: number; height: number }) => {
+  const ratio = size.width / size.height;
+  if (Math.abs(ratio - 16 / 9) < 0.05) return '16:9';
+  if (Math.abs(ratio - 9 / 16) < 0.05) return '9:16';
+  if (Math.abs(ratio - 1) < 0.05) return '1:1';
+  // fallback
+  return '16:9';
+};
+
+
+
 export const Videos = () => {
   const [activeTab, setActiveTab] = useState<TabType>('import');
   
   // States pour la recherche Pexels
   const [pexelsQuery, setPexelsQuery] = useState('');
   const [pexelsMediaType, setPexelsMediaType] = useState<PexelsMediaType>('photos');
-  const {
-    data: pexelsData,
-    loading: pexelsLoading,
-    error: pexelsError,
-    search: searchPexels,
-    loadNextPage: loadNextPexelsPage,
-    hasNextPage: hasNextPexelsPage
-  } = usePexelsSearch();
+  const { data: pexelsData, loading: pexelsLoading, error: pexelsError, search: searchPexels, loadNextPage, hasMore } = usePexelsSearch();
   
   // Utiliser le store global pour les médias importés
   const {
@@ -269,7 +274,7 @@ export const Videos = () => {
       await searchPexels({
         query: pexelsQuery.trim(),
         type: pexelsMediaType,
-        perPage: 20 // <= ne pas mettre plus !
+        perPage: 20
       });
     }
   }, [pexelsQuery, pexelsMediaType, searchPexels]);
@@ -280,11 +285,12 @@ export const Videos = () => {
 
   const handlePexelsTypeChange = (type: PexelsMediaType) => {
     setPexelsMediaType(type);
+    // Relancer automatiquement la recherche si il y a déjà un terme
     if (pexelsQuery.trim()) {
       searchPexels({
         query: pexelsQuery.trim(),
         type: type,
-        perPage: 20 // <= ne pas mettre plus !
+        perPage: 20
       });
     }
   };
@@ -296,49 +302,6 @@ export const Videos = () => {
     }
   };
 
-  // Déclenche la recherche Pexels à chaque changement de type ou de query (si query non vide)
-  useEffect(() => {
-    if (pexelsQuery.trim()) {
-      handlePexelsSearch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pexelsMediaType]);
-
-
-  // Infinite loader for Masonry (Pexels)
-  const pexelsItems = useMemo(() => {
-    if (!pexelsData) return [];
-    const items = pexelsMediaType === 'photos' ? pexelsData.photos || [] : pexelsData.videos || [];
-    return items.map((item, index) => ({
-      ...item,
-      _key: `pexels-${pexelsMediaType}-${item.id}-${index}`
-    }));
-  }, [pexelsData, pexelsMediaType]);
-
-  // Ajoute un flag pour détecter si l'utilisateur a scrollé dans la Masonry Pexels
-  const [hasUserScrolledMasonry, setHasUserScrolledMasonry] = useState(false);
-
-  // Infinite loader: ne déclenche le chargement que si on scroll à la fin ET que l'utilisateur a scrollé dans Masonry
-  const maybeLoadMore = useInfiniteLoader(
-    async (startIndex, stopIndex, items) => {
-      console.log('[MASONIC] maybeLoadMore called', { startIndex, stopIndex, itemsLength: items.length, hasUserScrolledMasonry, hasNextPexelsPage, pexelsLoading });
-      if (
-        hasUserScrolledMasonry &&
-        hasNextPexelsPage &&
-        !pexelsLoading &&
-        stopIndex >= items.length - 1
-      ) {
-        console.log('[MASONIC] maybeLoadMore: triggering loadNextPexelsPage()');
-        await loadNextPexelsPage();
-      }
-    },
-    {
-      isItemLoaded: (index, items) => !!items[index],
-      threshold: 6,
-      minimumBatchSize: 20,
-      totalItems: pexelsItems.length + (hasNextPexelsPage ? 1 : 0),
-    }
-  );
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -416,16 +379,17 @@ export const Videos = () => {
       
       case 'pexels':
         return (
-          <ScrollArea className="flex-1">
-            {/* Interface de recherche Pexels */}
-            <div className="px-4 pt-4 pb-3 border-b border-border bg-background sticky top-0 z-10">
+          <div className="flex flex-col h-full">
+            {/* Interface de recherche */}
+            <div className="px-4 pt-4 pb-3 border-b border-border">
+              {/* Input de recherche */}
               <div className="relative mb-3">
                 <Input
                   type="text"
                   placeholder="Media search on Pexels..."
                   value={pexelsQuery}
-                  onChange={e => setPexelsQuery(e.target.value)}
-                  onKeyPress={e => { if (e.key === 'Enter') handlePexelsSearch(); }}
+                  onChange={handlePexelsQueryChange}
+                  onKeyPress={handlePexelsKeyPress}
                   className="w-full pr-10"
                 />
                 <button
@@ -436,65 +400,126 @@ export const Videos = () => {
                   <MagnifyingGlassIcon className="size-4 text-muted-foreground" />
                 </button>
               </div>
+              
+              {/* Boutons Image/Video */}
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setPexelsMediaType('photos')}
-                  className={`${pexelsMediaType === 'photos' ? 'font-bold text-white' : 'font-normal text-text-primary'} hover:text-foreground transition-colors`}
+                  onClick={() => handlePexelsTypeChange('photos')}
+                  className={`${
+                    pexelsMediaType === 'photos'
+                      ? 'font-bold text-white'
+                      : 'font-normal text-text-primary'
+                  } hover:text-foreground transition-colors`}
                 >
                   Images
                 </button>
                 <span className="text-border">|</span>
                 <button
-                  onClick={() => setPexelsMediaType('videos')}
-                  className={`${pexelsMediaType === 'videos' ? 'font-bold text-white' : 'font-normal text-text-primary'} hover:text-foreground transition-colors`}
+                  onClick={() => handlePexelsTypeChange('videos')}
+                  className={`${
+                    pexelsMediaType === 'videos'
+                      ? 'font-bold text-white'
+                      : 'font-normal text-text-primary'
+                  } hover:text-foreground transition-colors`}
                 >
                   Videos
                 </button>
               </div>
             </div>
-            <div className="px-4 pb-4">
-              <Masonry
-                key={`masonry-pexels-${pexelsMediaType}-${pexelsItems.length}`}
-                items={pexelsItems}
-                columnWidth={120}
-                columnGutter={8}
-                rowGutter={8}
-                render={MasonryPexelsItem}
-                overscanBy={2}
-                itemKey={(data) => data._key}
-                onRender={maybeLoadMore}
-              />
+
+            {/* Contenu des résultats */}
+            <div className="flex-1">
+              {pexelsLoading && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-sm text-muted-foreground">
+                      Recherche en cours...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {pexelsError && (
+                <div className="flex items-center justify-center h-full px-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-red-500 mb-1">
+                      Erreur de recherche
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {pexelsError}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!pexelsLoading && !pexelsError && !pexelsData && !pexelsQuery && (
+                <div className="flex items-center justify-center h-full px-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Search {pexelsMediaType === 'photos' ? 'images' : 'videos'} on Pexels
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Enter a search term above
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!pexelsLoading && !pexelsError && pexelsData && (
+                <div className="px-4 pb-4">
+                  <Masonry
+                    key={`masonry-pexels-${pexelsMediaType}-${pexelsData.total_results}`}
+                    items={(() => {
+                      const items = pexelsMediaType === 'photos' ? pexelsData.photos || [] : pexelsData.videos || [];
+                      return items.map((item, index) => ({
+                        ...item,
+                        _key: `pexels-${pexelsMediaType}-${item.id}-${index}`
+                      }));
+                    })()}
+                    columnWidth={120}
+                    columnGutter={8}
+                    rowGutter={8}
+                    render={MasonryPexelsItem}
+                    overscanBy={2}
+                    itemKey={(data) => data._key}
+                  />
+                  {hasMore && (
+                    <div className="flex justify-center mt-4">
+                      <button
+                        onClick={loadNextPage}
+                        disabled={pexelsLoading}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {pexelsLoading ? 'Chargement...' : 'Load More'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!pexelsLoading && !pexelsError && pexelsData &&
+                ((pexelsMediaType === 'photos' && (!pexelsData.photos || pexelsData.photos.length === 0)) ||
+                 (pexelsMediaType === 'videos' && (!pexelsData.videos || pexelsData.videos.length === 0))) && (
+                <div className="flex items-center justify-center h-full px-4">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Aucun résultat trouvé
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Essayez un autre terme de recherche
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-          </ScrollArea>
+          </div>
         );
       
       default:
         return null;
     }
   };
-
-  // Ref pour la ScrollArea Pexels (déclarée ici, dans le composant)
-  const pexelsScrollAreaRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (activeTab !== 'pexels') return;
-    const scrollArea = pexelsScrollAreaRef.current;
-    if (!scrollArea) return;
-    const viewport = scrollArea.querySelector('[class*="Viewport"]');
-    if (!viewport) return;
-    const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = viewport as HTMLElement;
-      const isBottom = Math.abs(scrollTop + clientHeight - scrollHeight) < 2;
-      if (isBottom) {
-        console.log('[Pexels RADIX SCROLL BOTTOM]', { scrollTop, clientHeight, scrollHeight, page: pexelsData?.page, items: pexelsItems.length });
-        if (hasNextPexelsPage && !pexelsLoading) {
-          loadNextPexelsPage();
-        }
-      }
-    };
-    viewport.addEventListener('scroll', onScroll);
-    return () => viewport.removeEventListener('scroll', onScroll);
-  }, [activeTab, pexelsData, pexelsItems.length, hasNextPexelsPage, pexelsLoading, loadNextPexelsPage]);
 
   return (
     <div className="flex flex-1 flex-col h-full">
@@ -523,7 +548,9 @@ export const Videos = () => {
       </div>
 
       {/* Tab Content */}
-      {renderTabContent()}
+      <ScrollArea className="flex-1">
+        {renderTabContent()}
+      </ScrollArea>
     </div>
   );
 };
@@ -770,21 +797,71 @@ const MasonryPexelsItem = ({ data, width }: { data: (PexelsPhoto | PexelsVideo) 
   const isCurrentlySelected = isSelected(pexelsId, pexelsType);
 
   // Générer l'URL du thumbnail en utilisant les URLs Pexels valides
+  // Déterminer dynamiquement le format du player à chaque rendu
+  const size = useStore().size;
+  const playerFormat = getPlayerFormat(size);
+
   const thumbnailUrl = useMemo(() => {
     if (isPhoto) {
-      // Pour les photos, utiliser les URLs fournies par l'API
-      return getPexelsThumbnailUrl(data as PexelsPhoto, '16:9');
+      if (playerFormat === '16:9') return (data as PexelsPhoto).src.landscape || (data as PexelsPhoto).src.small;
+      if (playerFormat === '9:16') return (data as PexelsPhoto).src.portrait || (data as PexelsPhoto).src.small;
+      if (playerFormat === '1:1') {
+        const base = (data as PexelsPhoto).src.original || (data as PexelsPhoto).src.small;
+        return base.includes('?')
+          ? `${base}&fit=crop&w=130&h=130`
+          : `${base}?fit=crop&w=130&h=130`;
+      }
+      return (data as PexelsPhoto).src.small;
     } else if (isVideo) {
-      // Pour les vidéos, utiliser l'image de prévisualisation
-      return data.image;
+      const base = data.image;
+      if (playerFormat === '16:9') {
+        return base.includes('?')
+          ? `${base}&fit=crop&w=130&h=74`
+          : `${base}?fit=crop&w=130&h=74`;
+      }
+      if (playerFormat === '9:16') {
+        return base.includes('?')
+          ? `${base}&fit=crop&w=74&h=130`
+          : `${base}?fit=crop&w=74&h=130`;
+      }
+      if (playerFormat === '1:1') {
+        return base.includes('?')
+          ? `${base}&fit=crop&w=130&h=130`
+          : `${base}?fit=crop&w=130&h=130`;
+      }
+      return base;
     }
     return '';
-  }, [data, isPhoto, isVideo]);
+  }, [data, isPhoto, isVideo, playerFormat]);
 
   // URL complète HD pour le lecteur vidéo
+  // Générer l'URL full HD vidéo adaptée au format du player
+  // Utiliser le playerFormat déjà défini plus haut
   const fullHDUrl = useMemo(() => {
-    return getFullHDUrl(data, '16:9');
-  }, [data]);
+    if (isPhoto) {
+      return getFullHDUrl(data, playerFormat as '16:9' | '9:16');
+    }
+    if (isVideo) {
+      const base = (data as PexelsVideo).image;
+      if (playerFormat === '16:9') {
+        return base.includes('?')
+          ? `${base}&fit=crop&w=1200&h=630`
+          : `${base}?fit=crop&w=1200&h=630`;
+      }
+      if (playerFormat === '9:16') {
+        return base.includes('?')
+          ? `${base}&fit=crop&w=630&h=1200`
+          : `${base}?fit=crop&w=630&h=1200`;
+      }
+      if (playerFormat === '1:1') {
+        return base.includes('?')
+          ? `${base}&fit=crop&w=1080&h=1080`
+          : `${base}?fit=crop&w=1080&h=1080`;
+      }
+      return base;
+    }
+    return '';
+  }, [data, playerFormat, isPhoto, isVideo]);
 
   // Nom à afficher (selon vos spécifications)
   const displayName = useMemo(() => {
@@ -842,6 +919,7 @@ const MasonryPexelsItem = ({ data, width }: { data: (PexelsPhoto | PexelsVideo) 
       // Ajouter la vidéo à la timeline
       // Trouver le meilleur fichier vidéo (HD ou meilleure qualité disponible)
       const videoFile = data.video_files.find(file => file.quality === 'hd') || data.video_files[0];
+      
       dispatch(ADD_VIDEO, {
         payload: {
           id: data.id.toString(),
@@ -923,7 +1001,8 @@ const MasonryPexelsItem = ({ data, width }: { data: (PexelsPhoto | PexelsVideo) 
           <img
             draggable={false}
             src={thumbnailUrl}
-            className="h-full w-full rounded-md object-cover cursor-pointer"
+            className="rounded-md cursor-pointer"
+            style={{ width: 130, height: 'auto', maxHeight: 260 }}
             alt={displayName}
           />
           
